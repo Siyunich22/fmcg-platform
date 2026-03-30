@@ -184,7 +184,7 @@ export default function DebtsPage() {
     const mapB = new Map<string, OsvAnalysisRow>();
     for (const r of resultB.rows) mapB.set(r.branch_name + "||" + r.counterparty, r);
 
-    const keys = new Set([...Array.from(mapA.keys()), ...Array.from(mapB.keys())]);
+    const keys = Array.from(new Set([...Array.from(mapA.keys()), ...Array.from(mapB.keys())]));
     const result = [];
     for (const key of keys) {
       const a = mapA.get(key);
