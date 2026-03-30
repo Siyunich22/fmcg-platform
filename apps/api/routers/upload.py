@@ -351,6 +351,75 @@ async def delete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+@router.post("/osv/files")
+async def upload_osv_files(
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload multiple OSV files directly (1210/3310/1710 .xls/.xlsx)."""
+    from services.parser_osv import parse_osv_file
+
+    all_entries = []
+    errors = []
+
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith((".xls", ".xlsx")):
+            errors.append(f"{file.filename}: неподдерживаемый формат")
+            continue
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / file.filename
+
+        try:
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            entries = parse_osv_file(str(tmp_path))
+            all_entries.extend(entries)
+        except Exception as e:
+            errors.append(f"{file.filename}: {e}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not all_entries:
+        raise HTTPException(422, f"Нет данных для сохранения. Ошибки: {'; '.join(errors)}")
+
+    period_dates = {e["period_date"] for e in all_entries}
+    accounts = {e["account"] for e in all_entries}
+    branch_names = {e["branch_name"] for e in all_entries}
+
+    for pd in period_dates:
+        for acc in accounts:
+            await db.execute(
+                delete(OsvEntry).where(
+                    OsvEntry.period_date == pd,
+                    OsvEntry.account == acc,
+                )
+            )
+
+    for e in all_entries:
+        db.add(OsvEntry(
+            account=e["account"],
+            branch_name=e["branch_name"],
+            period_date=e["period_date"],
+            counterparty=e["counterparty"],
+            saldo_start_dt=e["saldo_start_dt"],
+            saldo_start_kt=e["saldo_start_kt"],
+            oborot_dt=e["oborot_dt"],
+            oborot_kt=e["oborot_kt"],
+            saldo_end_dt=e["saldo_end_dt"],
+            saldo_end_kt=e["saldo_end_kt"],
+        ))
+
+    await db.commit()
+    return {
+        "ok": True,
+        "rows": len(all_entries),
+        "accounts": sorted(accounts),
+        "branches": sorted(branch_names),
+        "errors": errors,
+    }
+
+
 @router.get("/osv/folder-config")
 async def get_osv_folder_config():
     cfg = _load_folder_config()

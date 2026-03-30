@@ -4,7 +4,7 @@ import { useDropzone } from "react-dropzone";
 import {
   useUploadSales, useUploadStock, useUploadHistory, useDeleteUpload,
   useFolderConfig, useSaveFolderConfig, useSyncFromFolder,
-  useOsvFolderConfig, useSaveOsvFolderConfig, useScanOsvFolder,
+  useOsvFolderConfig, useSaveOsvFolderConfig, useScanOsvFolder, useUploadOsvFiles,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
@@ -280,6 +280,109 @@ function SyncFromFolderBlock() {
   );
 }
 
+function OsvUploadBlock() {
+  const upload = useUploadOsvFiles();
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [result, setResult] = useState<{ rows: number; accounts: string[]; branches: string[]; errors: string[] } | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const onDrop = useCallback(async (accepted: File[]) => {
+    if (!accepted.length) return;
+    setState("loading");
+    setResult(null);
+    setErrorMsg("");
+    try {
+      const res = await upload.mutateAsync(accepted);
+      setResult(res);
+      setState("success");
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Ошибка загрузки");
+      setState("error");
+    }
+  }, [upload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    },
+    multiple: true,
+    disabled: state === "loading",
+  });
+
+  return (
+    <div className="bg-white border border-indigo-200 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-indigo-100 flex items-center gap-2 bg-indigo-50/40">
+        <FileSpreadsheet size={14} className="text-indigo-500" />
+        <span className="text-sm font-bold text-gray-900">Загрузка ОСВ файлов</span>
+        <span className="text-xs text-gray-400 ml-1">— 1210 / 3310 / 1710 напрямую</span>
+      </div>
+      <div className="p-5">
+        <div
+          {...getRootProps()}
+          className={cn(
+            "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
+            isDragActive ? "border-indigo-500 bg-indigo-50"
+            : state === "success" ? "border-green-400 bg-green-50"
+            : state === "error" ? "border-red-300 bg-red-50"
+            : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
+          )}
+        >
+          <input {...getInputProps()} />
+          {state === "loading" ? (
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 size={28} className="text-indigo-500 animate-spin" />
+              <div className="text-sm font-medium text-gray-600">Обрабатываем файлы...</div>
+            </div>
+          ) : state === "success" && result ? (
+            <div className="flex flex-col items-center gap-3">
+              <CheckCircle size={28} className="text-green-500" />
+              <div className="text-sm font-bold text-green-700">Загружено успешно</div>
+              <div className="text-xs text-gray-600">
+                <span className="font-black text-green-700 text-base mr-1">{result.rows}</span>
+                строк | Счета: {result.accounts.join(", ")} | Филиалы: {result.branches.length}
+              </div>
+              {result.errors?.length > 0 && (
+                <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                  ⚠ {result.errors[0]}
+                </div>
+              )}
+              <button className="text-xs text-gray-400 hover:text-gray-600 mt-1"
+                onClick={(e) => { e.stopPropagation(); setState("idle"); }}>
+                Загрузить ещё
+              </button>
+            </div>
+          ) : state === "error" ? (
+            <div className="flex flex-col items-center gap-3">
+              <XCircle size={28} className="text-red-500" />
+              <div className="text-sm font-bold text-red-600">Ошибка загрузки</div>
+              <div className="text-xs text-red-500 max-w-xs">{errorMsg}</div>
+              <button className="mt-1 text-xs text-blue-700 hover:underline"
+                onClick={(e) => { e.stopPropagation(); setState("idle"); }}>
+                Попробовать снова
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center">
+                <FileSpreadsheet size={22} className="text-indigo-400" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-700">
+                  {isDragActive ? "Отпустите файлы" : "Перетащите файлы ОСВ или кликните"}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">Можно выбрать несколько файлов сразу</div>
+                <div className="text-xs text-gray-300 mt-1 font-mono">1210 Береке 30.03.26.xls · 3310 Астана 30.03.26.xls</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OsvSyncBlock() {
   const { data: cfg, isLoading } = useOsvFolderConfig();
   const saveConfig = useSaveOsvFolderConfig();
@@ -417,7 +520,10 @@ export default function UploadPage() {
       {/* One-click sync from folder */}
       <SyncFromFolderBlock />
 
-      {/* OSV sync block */}
+      {/* OSV direct file upload */}
+      <OsvUploadBlock />
+
+      {/* OSV sync block (local folder - for desktop use) */}
       <OsvSyncBlock />
 
       {/* Upload zones */}

@@ -219,6 +219,29 @@ export const useSaveOsvFolderConfig = () => {
   });
 };
 
+export const useUploadOsvFiles = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; rows: number; accounts: string[]; branches: string[]; errors: string[] }, Error, File[]>({
+    mutationFn: async (files: File[]) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
+      const res = await api.post("/api/upload/osv/files", form, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["osv-analysis"] });
+      qc.invalidateQueries({ queryKey: ["osv-dates"] });
+      qc.invalidateQueries({ queryKey: ["osv-branches"] });
+    },
+  });
+};
+
 export const useScanOsvFolder = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean; rows: number; accounts: string[]; branches: string[]; period_dates: string[] }, Error, void>({
