@@ -50,7 +50,7 @@ function exportToExcel(
     if (!byBranch.has(r.branch_name)) byBranch.set(r.branch_name, []);
     byBranch.get(r.branch_name)!.push(r);
   }
-  const branchNames = [...byBranch.keys()].sort();
+  const branchNames = Array.from(byBranch.keys()).sort();
 
   // Лист 1 — Все филиалы (сводный)
   const summaryData: (string | number)[][] = [
