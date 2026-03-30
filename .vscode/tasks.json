@@ -1,0 +1,115 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🚀 Start All (Docker)",
+      "type": "shell",
+      "command": "docker compose up --build",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🗄️ DB: Start Postgres only",
+      "type": "shell",
+      "command": "docker compose up db -d",
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🐍 API: Start FastAPI (dev)",
+      "type": "shell",
+      "command": "cd apps/api && source .venv/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": [],
+      "dependsOn": "🗄️ DB: Start Postgres only"
+    },
+    {
+      "label": "🌐 Web: Start Next.js (dev)",
+      "type": "shell",
+      "command": "cd apps/web && npm run dev",
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": [
+        {
+          "pattern": {
+            "regexp": "^(.*):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5
+          }
+        }
+      ]
+    },
+    {
+      "label": "⚡ Dev: Start API + Web",
+      "dependsOn": ["🐍 API: Start FastAPI (dev)", "🌐 Web: Start Next.js (dev)"],
+      "dependsOrder": "parallel",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "🔄 DB: Run Migrations",
+      "type": "shell",
+      "command": "cd apps/api && source .venv/bin/activate && alembic upgrade head",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔄 DB: Create Migration",
+      "type": "shell",
+      "command": "cd apps/api && source .venv/bin/activate && alembic revision --autogenerate -m \"${input:migrationName}\"",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🧪 Test: API",
+      "type": "shell",
+      "command": "cd apps/api && source .venv/bin/activate && pytest -v",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🧪 Test: Parsers only",
+      "type": "shell",
+      "command": "cd apps/api && source .venv/bin/activate && pytest tests/test_parsers.py -v",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "📦 Install: All deps",
+      "type": "shell",
+      "command": "cd apps/web && npm install && cd ../api && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🧹 Lint: All",
+      "type": "shell",
+      "command": "cd apps/web && npm run lint && cd ../api && source .venv/bin/activate && ruff check .",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "📤 Deploy: Build Docker images",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.prod.yml build",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "migrationName",
+      "type": "promptString",
+      "description": "Migration name (e.g. add_alerts_table)"
+    }
+  ]
+}

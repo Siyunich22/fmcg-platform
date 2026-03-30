@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 97%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --border: 0 0% 88%;
+    --muted: 0 0% 54%;
+    --primary: 220 65% 32%;
+    --primary-foreground: 0 0% 100%;
+    --green: 145 55% 32%;
+    --amber: 35 90% 38%;
+    --red: 4 72% 46%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+}

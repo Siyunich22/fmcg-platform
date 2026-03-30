@@ -1,0 +1,236 @@
+### FMCG Platform API — VS Code REST Client
+### Install: REST Client extension (humao.rest-client)
+### Usage: click "Send Request" above any request
+
+@baseUrl = http://localhost:8000
+@token = {{login.response.body.access_token}}
+
+# ══════════════════════════════════════
+# AUTH
+# ══════════════════════════════════════
+
+### Login
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@fmcg.kz",
+  "password": "admin123"
+}
+
+###
+
+# ══════════════════════════════════════
+# DASHBOARD
+# ══════════════════════════════════════
+
+### Get KPIs
+GET {{baseUrl}}/api/dashboard/kpis
+Authorization: Bearer {{token}}
+
+###
+
+### Get Alerts
+GET {{baseUrl}}/api/dashboard/alerts
+Authorization: Bearer {{token}}
+
+###
+
+### Sales by Branch
+GET {{baseUrl}}/api/dashboard/sales-by-branch
+Authorization: Bearer {{token}}
+
+###
+
+### Sales by Category
+GET {{baseUrl}}/api/dashboard/sales-by-category
+Authorization: Bearer {{token}}
+
+###
+
+### Top Slow Stock (days_supply > 90)
+GET {{baseUrl}}/api/dashboard/top-slow-stock?limit=20
+Authorization: Bearer {{token}}
+
+###
+
+# ══════════════════════════════════════
+# UPLOAD
+# ══════════════════════════════════════
+
+### Upload Sales file
+POST {{baseUrl}}/api/upload/sales
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="sales.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ./test_data/sales_sample.xlsx
+------FormBoundary--
+
+###
+
+### Upload Stock file
+POST {{baseUrl}}/api/upload/stock
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="stock.xls"
+Content-Type: application/vnd.ms-excel
+
+< ./test_data/stock_sample.xls
+------FormBoundary--
+
+###
+
+### Get Upload History
+GET {{baseUrl}}/api/upload/history
+Authorization: Bearer {{token}}
+
+###
+
+# ══════════════════════════════════════
+# SALES
+# ══════════════════════════════════════
+
+### Get All Sales (paginated)
+GET {{baseUrl}}/api/sales?page=1&page_size=50
+Authorization: Bearer {{token}}
+
+###
+
+### Filter by branch
+GET {{baseUrl}}/api/sales?branch_code=ASTANA&page=1
+Authorization: Bearer {{token}}
+
+###
+
+### Filter by category
+GET {{baseUrl}}/api/sales?category=МАСЛО&page=1
+Authorization: Bearer {{token}}
+
+###
+
+### Export to Excel
+GET {{baseUrl}}/api/sales/export?category=МАСЛО
+Authorization: Bearer {{token}}
+
+###
+
+# ══════════════════════════════════════
+# STOCK
+# ══════════════════════════════════════
+
+### Get Stock (all)
+GET {{baseUrl}}/api/stock?page=1&page_size=50
+Authorization: Bearer {{token}}
+
+###
+
+### Get Critical Stock only
+GET {{baseUrl}}/api/stock?flag=critical
+Authorization: Bearer {{token}}
+
+###
+
+### Get Stock Matrix (SKU × branches)
+GET {{baseUrl}}/api/stock/matrix?category=ЧАЙ
+Authorization: Bearer {{token}}
+
+###
+
+# ══════════════════════════════════════
+# DEBTS
+# ══════════════════════════════════════
+
+### Get All Debts
+GET {{baseUrl}}/api/debts
+Authorization: Bearer {{token}}
+
+###
+
+### Get Critical Debts only
+GET {{baseUrl}}/api/debts?status=critical
+Authorization: Bearer {{token}}
+
+###
+
+# ══════════════════════════════════════
+# ORDERS
+# ══════════════════════════════════════
+
+### Get All Orders
+GET {{baseUrl}}/api/orders?page=1&page_size=20
+Authorization: Bearer {{token}}
+
+###
+
+### Get Pending Orders
+GET {{baseUrl}}/api/orders?status=pending
+Authorization: Bearer {{token}}
+
+###
+
+### Create New Order
+POST {{baseUrl}}/api/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "branch_id": "BRANCH_UUID_HERE",
+  "comment": "Срочная заявка",
+  "items": [
+    {
+      "nomenclature_id": "NOM_UUID_HERE",
+      "qty": 100,
+      "price": 850.00
+    },
+    {
+      "nomenclature_id": "NOM_UUID_2_HERE",
+      "qty": 50,
+      "price": 1200.00
+    }
+  ]
+}
+
+###
+
+### Confirm Order
+PATCH {{baseUrl}}/api/orders/ORDER_UUID_HERE/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "confirmed"
+}
+
+###
+
+### Cancel Order
+PATCH {{baseUrl}}/api/orders/ORDER_UUID_HERE/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "cancelled"
+}
+
+###
+
+# ══════════════════════════════════════
+# HEALTH
+# ══════════════════════════════════════
+
+### Health Check
+GET {{baseUrl}}/health
+
+###
+
+### API Docs
+GET {{baseUrl}}/docs
+
+###

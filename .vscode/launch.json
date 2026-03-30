@@ -1,0 +1,70 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🐍 Debug FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+      "cwd": "${workspaceFolder}/apps/api",
+      "envFile": "${workspaceFolder}/apps/api/.env",
+      "python": "${workspaceFolder}/apps/api/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "🐍 Debug Parser: Sales",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/api/services/parser_sales.py",
+      "cwd": "${workspaceFolder}/apps/api",
+      "envFile": "${workspaceFolder}/apps/api/.env",
+      "python": "${workspaceFolder}/apps/api/.venv/bin/python",
+      "console": "integratedTerminal",
+      "args": ["--file", "${workspaceFolder}/test_data/sales_sample.xlsx"]
+    },
+    {
+      "name": "🐍 Debug Parser: Stock",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/api/services/parser_stock.py",
+      "cwd": "${workspaceFolder}/apps/api",
+      "envFile": "${workspaceFolder}/apps/api/.env",
+      "python": "${workspaceFolder}/apps/api/.venv/bin/python",
+      "console": "integratedTerminal",
+      "args": ["--file", "${workspaceFolder}/test_data/stock_sample.xls"]
+    },
+    {
+      "name": "🧪 Debug Tests (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-v", "--tb=short"],
+      "cwd": "${workspaceFolder}/apps/api",
+      "python": "${workspaceFolder}/apps/api/.venv/bin/python",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "🌐 Debug Next.js",
+      "type": "node",
+      "request": "launch",
+      "name": "Next.js debug",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/apps/web",
+      "port": 9229,
+      "console": "integratedTerminal",
+      "env": {
+        "NODE_OPTIONS": "--inspect"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🚀 Full Stack Debug",
+      "configurations": ["🐍 Debug FastAPI", "🌐 Debug Next.js"],
+      "stopAll": true
+    }
+  ]
+}
