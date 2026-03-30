@@ -15,6 +15,10 @@ api.interceptors.request.use((config) => {
     const token = sessionStorage.getItem("access_token");
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
+  // Let browser/axios set Content-Type automatically for FormData (includes boundary)
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
   return config;
 });
 
