@@ -6,12 +6,19 @@ const nextConfig = {
       process.env.API_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
       "http://localhost:8000";
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${apiUrl}/api/:path*`,
-      },
+    const backendRoutes = [
+      "upload",
+      "dashboard",
+      "sales",
+      "stock",
+      "debts",
+      "orders",
+      "branches",
     ];
+    return backendRoutes.map((route) => ({
+      source: `/api/${route}/:path*`,
+      destination: `${apiUrl}/api/${route}/:path*`,
+    }));
   },
 };
 
