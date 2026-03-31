@@ -1,6 +1,7 @@
+from datetime import date as date_type
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, nullsfirst
 from db import get_db
 from models.models import TmzEntry
 
@@ -42,7 +43,7 @@ async def get_tmz(
     q = select(TmzEntry)
 
     if period_date:
-        q = q.where(TmzEntry.period_date == period_date)
+        q = q.where(TmzEntry.period_date == date_type.fromisoformat(period_date))
     else:
         # Latest date
         latest = await db.execute(
@@ -58,7 +59,7 @@ async def get_tmz(
     if search:
         q = q.where(TmzEntry.product_name.ilike(f"%{search}%"))
 
-    q = q.order_by(TmzEntry.branch_code, TmzEntry.sub_branch.nulls_first(), TmzEntry.product_name)
+    q = q.order_by(TmzEntry.branch_code, nullsfirst(TmzEntry.sub_branch), TmzEntry.product_name)
 
     result = await db.execute(q)
     rows = result.scalars().all()
@@ -83,9 +84,6 @@ async def get_tmz_summary(
     period_date: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Branch totals for TMZ."""
-    from sqlalchemy import func
-
     q = select(
         TmzEntry.branch_code,
         TmzEntry.sub_branch,
@@ -95,7 +93,7 @@ async def get_tmz_summary(
     )
 
     if period_date:
-        q = q.where(TmzEntry.period_date == period_date)
+        q = q.where(TmzEntry.period_date == date_type.fromisoformat(period_date))
     else:
         latest = await db.execute(
             select(TmzEntry.period_date).order_by(TmzEntry.period_date.desc()).limit(1)
