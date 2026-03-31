@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from db import get_db
-from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry
+from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry, TmzEntry
 from services.parser_sales import parse_sales_file, detect_category, detect_subcategory, is_group_node
 from services.parser_stock import parse_stock_file, _extract_date_from_filename as _stock_date_from_name
 from services.parser_osv import parse_osv_folder
@@ -496,6 +496,67 @@ async def scan_osv_folder(db: AsyncSession = Depends(get_db)):
         "accounts": sorted(accounts),
         "branches": sorted(branch_names),
         "period_dates": [str(d) for d in sorted(period_dates)],
+    }
+
+
+@router.post("/tmz/files")
+async def upload_tmz_files(
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload 1330 ТМЗ XLS files and save closing balances by branch."""
+    from services.parser_tmz import parse_tmz_file
+
+    all_entries = []
+    errors = []
+
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith((".xls", ".xlsx")):
+            errors.append(f"{file.filename}: неподдерживаемый формат")
+            continue
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / file.filename
+
+        try:
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            entries = parse_tmz_file(str(tmp_path))
+            all_entries.extend(entries)
+        except Exception as e:
+            errors.append(f"{file.filename}: {e}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not all_entries and not errors:
+        raise HTTPException(422, "Файл не содержит данных")
+    if not all_entries:
+        raise HTTPException(422, f"Ошибок: {'; '.join(errors)}")
+
+    period_dates = {e["period_date"] for e in all_entries}
+
+    # Delete existing entries for same period
+    for pd in period_dates:
+        await db.execute(delete(TmzEntry).where(TmzEntry.period_date == pd))
+
+    for e in all_entries:
+        db.add(TmzEntry(
+            branch_code=e["branch_code"],
+            sub_branch=e.get("sub_branch"),
+            product_name=e["product_name"],
+            qty_end=e["qty_end"],
+            amount_end=e["amount_end"],
+            period_date=e["period_date"],
+        ))
+
+    await db.commit()
+    branches = sorted({e["branch_code"] for e in all_entries})
+    return {
+        "ok": True,
+        "rows": len(all_entries),
+        "branches": branches,
+        "period_dates": [str(d) for d in sorted(period_dates)],
+        "errors": errors,
     }
 
 

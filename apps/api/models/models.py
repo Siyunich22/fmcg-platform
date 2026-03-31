@@ -178,6 +178,18 @@ class OsvEntry(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 
+class TmzEntry(Base):
+    __tablename__ = "tmz_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    branch_code = Column(String(20), nullable=False)   # ALMATY, AKTAU, etc.
+    sub_branch = Column(String(50), nullable=True)     # Fighter, Брак, etc.
+    product_name = Column(Text, nullable=False)
+    qty_end = Column(Numeric(14, 3), default=0)
+    amount_end = Column(Numeric(18, 2), default=0)
+    period_date = Column(Date, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

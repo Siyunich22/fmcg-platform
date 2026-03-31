@@ -225,13 +225,7 @@ export const useUploadOsvFiles = () => {
     mutationFn: async (files: File[]) => {
       const form = new FormData();
       files.forEach((f) => form.append("files", f));
-      const token = typeof window !== "undefined" ? sessionStorage.getItem("access_token") : null;
-      const res = await api.post("/api/upload/osv/files", form, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const res = await api.post("/api/upload/osv/files", form);
       return res.data;
     },
     onSuccess: () => {
@@ -336,6 +330,63 @@ export const useOsvAnalysis = (params: {
       api.get("/api/debts/osv/analysis", { params }).then((r) => r.data),
     enabled: true,
   });
+
+// ── TMZ (1330 ТМЗ) hooks ─────────────────────────────────────────────────────
+
+export interface TmzRow {
+  id: string;
+  branch_code: string;
+  branch_name: string;
+  sub_branch: string | null;
+  product_name: string;
+  qty_end: number;
+  amount_end: number;
+  period_date: string;
+}
+
+export interface TmzSummaryRow {
+  branch_code: string;
+  branch_name: string;
+  sub_branch: string | null;
+  total_qty: number;
+  total_amount: number;
+  sku_count: number;
+}
+
+export const useTmzDates = () =>
+  useQuery<string[]>({
+    queryKey: ["tmz-dates"],
+    queryFn: () => api.get("/api/tmz/dates").then((r) => r.data),
+  });
+
+export const useTmz = (params: { period_date?: string; branch?: string; search?: string }) =>
+  useQuery<TmzRow[]>({
+    queryKey: ["tmz", params],
+    queryFn: () => api.get("/api/tmz", { params }).then((r) => r.data),
+  });
+
+export const useTmzSummary = (periodDate?: string) =>
+  useQuery<TmzSummaryRow[]>({
+    queryKey: ["tmz-summary", periodDate],
+    queryFn: () => api.get("/api/tmz/summary", { params: { period_date: periodDate } }).then((r) => r.data),
+  });
+
+export const useUploadTmzFiles = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; rows: number; branches: string[]; period_dates: string[]; errors: string[] }, Error, File[]>({
+    mutationFn: async (files: File[]) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      const res = await api.post("/api/upload/tmz/files", form);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tmz"] });
+      qc.invalidateQueries({ queryKey: ["tmz-dates"] });
+      qc.invalidateQueries({ queryKey: ["tmz-summary"] });
+    },
+  });
+};
 
 export const useUploadStock = () => {
   const qc = useQueryClient();

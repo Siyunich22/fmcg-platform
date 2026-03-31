@@ -15,6 +15,7 @@ const NAV = [
   { href: "/dashboard/sales",  label: "Продажи",   icon: TrendingUp,       section: "overview" },
   { href: "/dashboard/stock",  label: "Остатки",   icon: Package,          section: "overview" },
   { href: "/dashboard/debts",  label: "Дебиторка", icon: AlertCircle,      section: "overview" },
+  { href: "/dashboard/tmz",    label: "ТМЗ",       icon: Package,          section: "overview" },
   { href: "/dashboard/orders", label: "Заявки",    icon: ClipboardList,    section: "ops" },
   { href: "/dashboard/upload", label: "Загрузка",  icon: Upload,           section: "ops" },
 ];

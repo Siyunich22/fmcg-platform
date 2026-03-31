@@ -5,6 +5,7 @@ import {
   useUploadSales, useUploadStock, useUploadHistory, useDeleteUpload,
   useFolderConfig, useSaveFolderConfig, useSyncFromFolder,
   useOsvFolderConfig, useSaveOsvFolderConfig, useScanOsvFolder, useUploadOsvFiles,
+  useUploadTmzFiles,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {

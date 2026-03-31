@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from routers import auth, upload, dashboard, sales, stock, debts, orders, branches
+from routers import auth, upload, dashboard, sales, stock, debts, orders, branches, tmz
 from db import engine, Base
 
 
@@ -43,6 +43,7 @@ app.include_router(stock.router, prefix="/api/stock", tags=["stock"])
 app.include_router(debts.router, prefix="/api/debts", tags=["debts"])
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(branches.router, prefix="/api", tags=["branches"])
+app.include_router(tmz.router, prefix="/api/tmz", tags=["tmz"])
 
 
 @app.get("/health")
