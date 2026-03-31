@@ -6,7 +6,11 @@ import os
 _raw_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://fmcg:fmcg@localhost:5432/fmcg")
 DATABASE_URL = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1) if _raw_url.startswith("postgresql://") else _raw_url
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"statement_cache_size": 0},
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
