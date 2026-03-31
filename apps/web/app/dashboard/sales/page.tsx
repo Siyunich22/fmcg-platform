@@ -4,26 +4,25 @@ import { useDropzone } from "react-dropzone";
 import {
   useSalesReportDates, useSalesReportBranches, useSalesReportSummary,
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
-  type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
+  useTmzSummary,
+  type SalesReportRow, type SalesReportSummaryRow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Upload, CheckCircle, XCircle, Loader2,
-  ChevronRight, ChevronDown, Search, X, BarChart2,
+  ChevronRight, ChevronDown, X, Package, BarChart2,
 } from "lucide-react";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-function fmt(n: number) {
-  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
-}
-function fmtQty(n: number) {
-  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-function fmtShort(n: number) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(".0", "") + " млн";
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + " тыс";
+const ru = (n: number) =>
+  n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmt = (n: number) => ru(n) + " ₸";
+const fmtQ = (n: number) => ru(n) + " шт";
+const fmtM = (n: number) => {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
   return n.toFixed(0);
-}
+};
 
 // ── Upload block ──────────────────────────────────────────────────────────────
 function UploadBlock({ onDone }: { onDone: () => void }) {
@@ -36,7 +35,7 @@ function UploadBlock({ onDone }: { onDone: () => void }) {
     setState("loading");
     try {
       const res = await upload.mutateAsync(files[0]);
-      setMsg(`Загружено ${res.rows.toLocaleString("ru")} строк · ${res.branches.join(", ")}`);
+      setMsg(`${res.rows.toLocaleString("ru")} строк · ${res.branches.join(", ")}`);
       setState("success");
       onDone();
     } catch (e: unknown) {
@@ -59,247 +58,118 @@ function UploadBlock({ onDone }: { onDone: () => void }) {
       isDragActive ? "border-blue-500 bg-blue-50"
         : state === "success" ? "border-green-400 bg-green-50"
         : state === "error" ? "border-red-300 bg-red-50"
-        : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30"
+        : "border-gray-200 bg-white hover:border-blue-300"
     )}>
       <input {...getInputProps()} />
-      {state === "loading" && (
-        <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-          <Loader2 size={16} className="animate-spin text-blue-500" />Обрабатываем...
-        </div>
-      )}
-      {state === "success" && (
-        <div className="flex items-center justify-center gap-2 text-sm text-green-700">
-          <CheckCircle size={16} className="text-green-500" />{msg}
-          <button className="text-xs text-blue-600 hover:underline ml-2"
-            onClick={(e) => { e.stopPropagation(); setState("idle"); }}>Ещё</button>
-        </div>
-      )}
-      {state === "error" && (
-        <div className="flex items-center justify-center gap-2 text-sm text-red-600">
-          <XCircle size={16} />{msg}
-          <button className="text-xs text-blue-600 hover:underline ml-2"
-            onClick={(e) => { e.stopPropagation(); setState("idle"); }}>Повторить</button>
-        </div>
-      )}
-      {state === "idle" && (
-        <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-          <Upload size={15} />{isDragActive ? "Отпустите" : "Загрузить отчёт продаж .xlsx"}
-        </div>
-      )}
+      {state === "loading" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin text-blue-500" />Обрабатываем...</div>}
+      {state === "success" && <div className="flex items-center justify-center gap-2 text-sm text-green-700"><CheckCircle size={15} />Загружено: {msg}<button className="text-xs text-blue-600 underline ml-2" onClick={e => { e.stopPropagation(); setState("idle"); }}>Ещё</button></div>}
+      {state === "error" && <div className="flex items-center justify-center gap-2 text-sm text-red-600"><XCircle size={15} />{msg}<button className="text-xs text-blue-600 underline ml-2" onClick={e => { e.stopPropagation(); setState("idle"); }}>Повторить</button></div>}
+      {state === "idle" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Upload size={14} />{isDragActive ? "Отпустите" : "Загрузить отчёт продаж .xlsx"}</div>}
     </div>
   );
 }
 
-// ── Branch comparison chart (CSS bars) ────────────────────────────────────────
-function BranchChart({
-  totals, selectedBranch, onSelect,
-}: {
-  totals: SalesReportTotal[];
-  selectedBranch: string;
-  onSelect: (code: string) => void;
-}) {
-  const sorted = useMemo(() => [...totals].sort((a, b) => b.amount - a.amount), [totals]);
-  const max = sorted[0]?.amount ?? 1;
-  const grandTotal = sorted.reduce((s, t) => s + t.amount, 0);
+// ── Pivot tree ────────────────────────────────────────────────────────────────
+interface Cell { qty: number; amount: number; }
+interface PivotNode {
+  id: string; label: string; level: 0 | 1 | 2;
+  total: Cell; byBranch: Record<string, Cell>;
+  children: PivotNode[];
+  cat1: string; cat2: string | null; cat3: string | null;
+}
 
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <BarChart2 size={14} className="text-blue-400" />
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          Сравнение филиалов
-        </span>
-        {selectedBranch && (
-          <button
-            onClick={() => onSelect("")}
-            className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-          >
-            <X size={11} /> Сбросить
-          </button>
-        )}
-      </div>
+function buildPivotTree(rows: SalesReportSummaryRow[]): PivotNode[] {
+  const add = (cell: Cell, r: SalesReportSummaryRow) => { cell.qty += r.qty; cell.amount += r.amount; };
+  const ensure = (map: Record<string, Cell>, k: string) => { if (!map[k]) map[k] = { qty: 0, amount: 0 }; return map[k]; };
 
-      <div className="space-y-2.5">
-        {sorted.map((t, i) => {
-          const pct = max > 0 ? (t.amount / max) * 100 : 0;
-          const sharePct = grandTotal > 0 ? ((t.amount / grandTotal) * 100).toFixed(1) : "0";
-          const isSelected = selectedBranch === t.branch_code;
-          const isDimmed = !!selectedBranch && !isSelected;
-
-          return (
-            <button
-              key={t.branch_code}
-              onClick={() => onSelect(isSelected ? "" : t.branch_code)}
-              className={cn("w-full text-left transition-opacity", isDimmed && "opacity-35")}
-            >
-              <div className="flex items-center gap-1 mb-1">
-                <span className={cn(
-                  "text-[11px] font-semibold w-20 truncate flex-shrink-0",
-                  isSelected ? "text-blue-700" : "text-gray-600"
-                )}>
-                  {i + 1}. {t.branch_name}
-                </span>
-                <span className={cn(
-                  "text-[11px] font-mono ml-auto",
-                  isSelected ? "text-blue-700 font-bold" : "text-gray-700"
-                )}>
-                  {fmt(t.amount)}
-                </span>
-                <span className="text-[10px] text-gray-400 w-10 text-right flex-shrink-0">
-                  {sharePct}%
-                </span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all duration-500",
-                    isSelected
-                      ? "bg-blue-600"
-                      : i === 0 ? "bg-blue-500"
-                      : i === 1 ? "bg-blue-400"
-                      : i <= 3 ? "bg-blue-300"
-                      : "bg-blue-200"
-                  )}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="text-[10px] text-gray-400">{fmtQty(t.qty)} шт</span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const m1 = new Map<string, { n: PivotNode; m2: Map<string, { n: PivotNode; m3: Map<string, PivotNode> }> }>();
+  for (const r of rows) {
+    const c1 = r.cat1 ?? "Прочее";
+    const c2 = r.cat2; const c3 = r.cat3;
+    if (!m1.has(c1)) m1.set(c1, { n: { id: c1, label: c1, level: 0, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: null, cat3: null }, m2: new Map() });
+    const e1 = m1.get(c1)!; add(e1.n.total, r); add(ensure(e1.n.byBranch, r.branch_code), r);
+    const k2 = c2 ?? "__";
+    if (!e1.m2.has(k2)) e1.m2.set(k2, { n: { id: `${c1}|${k2}`, label: c2 ?? "—", level: 1, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: c2 ?? null, cat3: null }, m3: new Map() });
+    const e2 = e1.m2.get(k2)!; add(e2.n.total, r); add(ensure(e2.n.byBranch, r.branch_code), r);
+    if (c3) {
+      if (!e2.m3.has(c3)) e2.m3.set(c3, { id: `${c1}|${k2}|${c3}`, label: c3, level: 2, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: c2 ?? null, cat3: c3 });
+      const n3 = e2.m3.get(c3)!; add(n3.total, r); add(ensure(n3.byBranch, r.branch_code), r);
+    }
+  }
+  for (const [, e1] of m1) {
+    for (const [, e2] of e1.m2) {
+      e2.n.children = [...e2.m3.values()].sort((a, b) => b.total.amount - a.total.amount);
+      e1.n.children.push(e2.n);
+    }
+    e1.n.children.sort((a, b) => b.total.amount - a.total.amount);
+  }
+  return [...m1.values()].map(e => e.n).sort((a, b) => b.total.amount - a.total.amount);
 }
 
 // ── Product detail modal ──────────────────────────────────────────────────────
-function ProductModal({
-  product, allRows, bonusRows, onClose,
-}: {
-  product: SalesReportRow;
-  allRows: SalesReportRow[];
-  bonusRows: SalesReportRow[];
-  onClose: () => void;
+function ProductModal({ product, allRows, bonusRows, onClose }: {
+  product: SalesReportRow; allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; onClose: () => void;
 }) {
-  const productRows = useMemo(() =>
-    allRows
-      .filter(r => r.code === product.code && !r.is_bonus)
-      .sort((a, b) => b.amount - a.amount),
-    [allRows, product.code]
-  );
-
-  const relatedBonuses = useMemo(() =>
-    bonusRows
-      .filter(r => r.cat1 === product.cat1)
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 30),
-    [bonusRows, product.cat1]
-  );
-
-  const maxAmt = productRows[0]?.amount ?? 1;
-  const totalAmt = productRows.reduce((s, r) => s + r.amount, 0);
-  const totalQty = productRows.reduce((s, r) => s + r.qty, 0);
+  const byBranch = useMemo(() =>
+    allRows.filter(r => r.code === product.code && !r.is_bonus).sort((a, b) => b.amount - a.amount),
+    [allRows, product.code]);
+  const bonuses = useMemo(() =>
+    bonusRows.filter(r => r.cat1 === product.cat1).sort((a, b) => b.qty - a.qty).slice(0, 25),
+    [bonusRows, product.cat1]);
+  const max = byBranch[0]?.amount ?? 1;
+  const total = byBranch.reduce((s, r) => s + r.amount, 0);
+  const qty = byBranch.reduce((s, r) => s + r.qty, 0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-start gap-3 flex-shrink-0">
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-mono text-gray-400 mb-0.5">{product.code}</div>
-            <div className="text-sm font-bold text-gray-900 leading-snug">{product.name}</div>
-            {product.cat1 && (
-              <div className="text-xs text-gray-400 mt-0.5">
-                {[product.cat1, product.cat2, product.cat3].filter(Boolean).join(" › ")}
-              </div>
-            )}
+            <div className="text-[10px] font-mono text-gray-400">{product.code}</div>
+            <div className="text-sm font-bold text-gray-900">{product.name}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{[product.cat1, product.cat2, product.cat3].filter(Boolean).join(" › ")}</div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 flex-shrink-0">
-            <X size={18} />
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-
-        {/* KPI strip */}
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex gap-6 flex-shrink-0">
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Итого</div>
-            <div className="text-base font-black text-gray-900">{fmt(totalAmt)}</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Кол-во</div>
-            <div className="text-base font-black text-gray-900">{fmtQty(totalQty)} шт</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Филиалов</div>
-            <div className="text-base font-black text-gray-900">{productRows.length}</div>
-          </div>
+          <div><div className="text-[10px] text-gray-400 uppercase">Итого</div><div className="text-base font-black">{fmt(total)}</div></div>
+          <div><div className="text-[10px] text-gray-400 uppercase">Кол-во</div><div className="text-base font-black">{fmtQ(qty)}</div></div>
+          <div><div className="text-[10px] text-gray-400 uppercase">Филиалов</div><div className="text-base font-black">{byBranch.length}</div></div>
         </div>
-
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-          {/* Per-branch breakdown */}
           <div>
-            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Продажи по филиалам
-            </div>
-            {productRows.length === 0 ? (
-              <div className="text-sm text-gray-400 text-center py-4">Нет данных</div>
-            ) : (
-              <div className="space-y-2.5">
-                {productRows.map((r, i) => {
-                  const pct = maxAmt > 0 ? (r.amount / maxAmt) * 100 : 0;
-                  return (
-                    <div key={r.branch_code}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-gray-700">{r.branch_name}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[11px] text-gray-400">{fmtQty(r.qty)} шт</span>
-                          <span className="text-xs font-bold text-gray-800 w-28 text-right">{fmt(r.amount)}</span>
-                        </div>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            i === 0 ? "bg-blue-500" : i === 1 ? "bg-blue-400" : i === 2 ? "bg-blue-300" : "bg-blue-200"
-                          )}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">По филиалам</div>
+            {byBranch.length === 0
+              ? <div className="text-sm text-gray-400 text-center py-3">Нет данных</div>
+              : <div className="space-y-2.5">{byBranch.map((r, i) => {
+                const pct = max > 0 ? (r.amount / max) * 100 : 0;
+                const share = total > 0 ? (r.amount / total * 100).toFixed(0) : "0";
+                return (
+                  <div key={r.branch_code}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium text-gray-700 w-20 flex-shrink-0">{r.branch_name}</span>
+                      <span className="text-[11px] text-gray-400">{fmtQ(r.qty)}</span>
+                      <span className="text-[11px] text-gray-400 ml-auto">{share}%</span>
+                      <span className="text-xs font-bold text-gray-800 w-28 text-right">{fmt(r.amount)}</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Related bonuses */}
-          {relatedBonuses.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wide mb-2">
-                Бонусы в категории «{product.cat1}»
-              </div>
-              <div className="space-y-0.5">
-                {relatedBonuses.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 py-1.5 border-b border-amber-50/80">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-300 flex-shrink-0" />
-                    <span className="text-xs text-gray-700 flex-1 truncate">{r.name}</span>
-                    <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 flex-shrink-0">
-                      {r.branch_name}
-                    </span>
-                    <span className="text-[11px] font-mono text-gray-500 w-14 text-right flex-shrink-0">
-                      {fmtQty(r.qty)} шт
-                    </span>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={cn("h-full rounded-full", i === 0 ? "bg-blue-500" : i === 1 ? "bg-blue-400" : "bg-blue-300")} style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}</div>}
+          </div>
+          {bonuses.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wide mb-2">Бонусы в «{product.cat1}»</div>
+              <div className="space-y-0.5">{bonuses.map(r => (
+                <div key={r.id} className="flex items-center gap-2 py-1 border-b border-amber-50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300 flex-shrink-0" />
+                  <span className="text-xs text-gray-700 flex-1 truncate">{r.name}</span>
+                  <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5">{r.branch_name}</span>
+                  <span className="text-[11px] font-mono text-gray-500 w-14 text-right">{fmtQ(r.qty)}</span>
+                </div>
+              ))}</div>
             </div>
           )}
         </div>
@@ -308,272 +178,342 @@ function ProductModal({
   );
 }
 
-// ── Tree builder ──────────────────────────────────────────────────────────────
-interface Cat3Node { cat3: string | null; amount: number; qty: number; }
-interface Cat2Node { cat2: string | null; cat3s: Cat3Node[]; amount: number; qty: number; }
-interface Cat1Node { cat1: string; cat2s: Cat2Node[]; amount: number; qty: number; }
+// ── Cell ──────────────────────────────────────────────────────────────────────
+function PivotCell({ cell, rowTotal, colTotal, highlight }: {
+  cell: Cell | undefined; rowTotal: number; colTotal: number; highlight?: boolean;
+}) {
+  if (!cell || cell.amount === 0) return <span className="text-gray-200 text-xs">—</span>;
+  const rowShare = rowTotal > 0 ? (cell.amount / rowTotal) * 100 : 0;
 
-function buildTree(rows: SalesReportSummaryRow[]): Cat1Node[] {
-  const map = new Map<string, Cat1Node>();
-  for (const r of rows) {
-    const c1 = r.cat1 ?? "Прочее";
-    if (!map.has(c1)) map.set(c1, { cat1: c1, cat2s: [], amount: 0, qty: 0 });
-    const n1 = map.get(c1)!;
-    n1.amount += r.amount; n1.qty += r.qty;
-    const c2 = r.cat2 ?? null;
-    let n2 = n1.cat2s.find(x => x.cat2 === c2);
-    if (!n2) { n2 = { cat2: c2, cat3s: [], amount: 0, qty: 0 }; n1.cat2s.push(n2); }
-    n2.amount += r.amount; n2.qty += r.qty;
-    const c3 = r.cat3 ?? null;
-    let n3 = n2.cat3s.find(x => x.cat3 === c3);
-    if (!n3) { n3 = { cat3: c3, amount: 0, qty: 0 }; n2.cat3s.push(n3); }
-    n3.amount += r.amount; n3.qty += r.qty;
-  }
-  return [...map.values()].sort((a, b) => b.amount - a.amount);
+  return (
+    <div className="space-y-1">
+      <div className={cn("text-xs font-bold tabular-nums", highlight ? "text-blue-700" : "text-gray-800")}>
+        {fmtM(cell.amount)} ₸
+      </div>
+      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(cell.qty)}</div>
+      <div className="flex items-center gap-1">
+        <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={cn("h-full rounded-full", highlight ? "bg-blue-500" : "bg-blue-300")}
+            style={{ width: `${Math.min(rowShare, 100)}%` }}
+          />
+        </div>
+        <span className="text-[9px] text-gray-400 w-7 text-right tabular-nums">{rowShare.toFixed(0)}%</span>
+      </div>
+    </div>
+  );
 }
 
-// ── Product rows ──────────────────────────────────────────────────────────────
-function ProductRows({
-  rows, search, onProductClick,
+// ── Pivot table ───────────────────────────────────────────────────────────────
+interface BranchInfo { code: string; name: string; }
+
+function PivotTable({
+  tree, branches, branchTotals, allRows, bonusRows,
+  bonusSummary, onProductClick,
 }: {
-  rows: SalesReportRow[];
-  search: string;
+  tree: PivotNode[];
+  branches: BranchInfo[];
+  branchTotals: Record<string, Cell>;
+  allRows: SalesReportRow[];
+  bonusRows: SalesReportRow[];
+  bonusSummary: SalesReportSummaryRow[];
   onProductClick: (r: SalesReportRow) => void;
 }) {
-  // Group by product code, aggregate branches
-  const grouped = useMemo(() => {
-    const q = search.toLowerCase();
-    const map = new Map<string, { row: SalesReportRow; branches: string[]; qty: number; amount: number }>();
-    for (const r of rows) {
-      if (q && !r.name.toLowerCase().includes(q)) continue;
-      const key = r.code || r.name;
-      if (!map.has(key)) {
-        map.set(key, { row: r, branches: [], qty: 0, amount: 0 });
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // Flatten visible rows
+  function flatten(nodes: PivotNode[], out: PivotNode[] = []) {
+    for (const n of nodes) {
+      out.push(n);
+      if (open.has(n.id) && n.children.length) flatten(n.children, out);
+    }
+    return out;
+  }
+  const visibleRows = useMemo(() => flatten(tree), [tree, open]);
+
+  const grandTotal: Cell = useMemo(() => ({
+    qty: tree.reduce((s, n) => s + n.total.qty, 0),
+    amount: tree.reduce((s, n) => s + n.total.amount, 0),
+  }), [tree]);
+
+  // Bonus totals
+  const bonusTotal = useMemo(() => ({
+    qty: bonusSummary.reduce((s, r) => s + r.qty, 0),
+    amount: bonusSummary.reduce((s, r) => s + r.amount, 0),
+  }), [bonusSummary]);
+  const bonusByBranch = useMemo(() => {
+    const m: Record<string, Cell> = {};
+    for (const r of bonusSummary) {
+      if (!m[r.branch_code]) m[r.branch_code] = { qty: 0, amount: 0 };
+      m[r.branch_code].qty += r.qty;
+      m[r.branch_code].amount += r.amount;
+    }
+    return m;
+  }, [bonusSummary]);
+
+  const COL_W = 136;
+  const LEFT_W = 220;
+
+  // Products grouped by cat3 for expanded leaf display
+  const [openLeaf, setOpenLeaf] = useState<Set<string>>(new Set());
+  const toggleLeaf = (id: string) => setOpenLeaf(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  function getLeafProducts(node: PivotNode): SalesReportRow[] {
+    // Unique products by code, summed across branches
+    const map = new Map<string, SalesReportRow>();
+    for (const r of allRows) {
+      if (r.cat1 !== node.cat1) continue;
+      if (node.cat2 !== null && r.cat2 !== node.cat2) continue;
+      if (node.cat3 !== null && r.cat3 !== node.cat3) continue;
+      if (!r.is_bonus) {
+        const key = r.code || r.name;
+        if (!map.has(key)) map.set(key, { ...r });
+        else {
+          const existing = map.get(key)!;
+          map.set(key, { ...existing, qty: existing.qty + r.qty, amount: existing.amount + r.amount });
+        }
       }
-      const g = map.get(key)!;
-      g.qty += r.qty;
-      g.amount += r.amount;
-      g.branches.push(r.branch_name);
     }
     return [...map.values()].sort((a, b) => b.amount - a.amount);
-  }, [rows, search]);
-
-  if (!grouped.length) return null;
-
-  return (
-    <div className="border-t border-gray-100">
-      {grouped.map((g, i) => (
-        <button
-          key={g.row.code || g.row.name}
-          onClick={() => onProductClick(g.row)}
-          className={cn(
-            "w-full text-left grid grid-cols-[1fr_90px_130px] gap-2 items-center px-4 py-2 text-xs",
-            "border-b border-gray-50 hover:bg-blue-50/40 transition-colors group",
-            i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-          )}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-200 flex-shrink-0 group-hover:bg-blue-400 transition-colors" />
-            <span className="text-gray-700 truncate group-hover:text-blue-700">{g.row.name}</span>
-            <span className="flex-shrink-0 text-[9px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
-              → подробнее
-            </span>
-          </div>
-          <div className="text-right font-mono text-gray-400">{fmtQty(g.qty)} шт</div>
-          <div className="text-right font-mono font-semibold text-gray-800">
-            {g.amount > 0 ? fmt(g.amount) : <span className="text-gray-300">—</span>}
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ── Accordion row ─────────────────────────────────────────────────────────────
-function AccordionRow({
-  label, amount, qty, depth, expanded, onClick, children,
-}: {
-  label: string; amount: number; qty: number; depth: number;
-  expanded: boolean; onClick: () => void; children?: React.ReactNode;
-}) {
-  const pl = 16 + depth * 20;
-  const textCls =
-    depth === 0 ? "text-sm font-bold" :
-    depth === 1 ? "text-sm font-semibold" :
-    "text-xs font-medium";
-  const bgCls =
-    depth === 0 ? "bg-white hover:bg-gray-50" :
-    depth === 1 ? "bg-gray-50/50 hover:bg-gray-100/50" :
-    "bg-white hover:bg-blue-50/30";
-
-  return (
-    <>
-      <div
-        className={cn(
-          "grid grid-cols-[1fr_90px_140px] items-center gap-2 py-2.5 cursor-pointer select-none",
-          "border-b border-gray-100 transition-colors", bgCls
-        )}
-        style={{ paddingLeft: pl, paddingRight: 16 }}
-        onClick={onClick}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="flex-shrink-0 text-gray-400">
-            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </span>
-          <span className={cn(textCls, "text-gray-800 truncate")}>{label}</span>
-        </div>
-        <div className="text-right text-xs font-mono text-gray-400">{fmtQty(qty)} шт</div>
-        <div className={cn(
-          "text-right font-mono",
-          depth === 0 ? "text-sm font-black text-gray-900" :
-          depth === 1 ? "text-sm font-bold text-gray-800" :
-          "text-xs font-semibold text-gray-700"
-        )}>
-          {amount > 0 ? fmt(amount) : <span className="text-gray-300">—</span>}
-        </div>
-      </div>
-      {expanded && children}
-    </>
-  );
-}
-
-// ── Category accordion ────────────────────────────────────────────────────────
-function CategoryAccordion({
-  tree, allRows, bonusSummary, bonusRows, search, onProductClick,
-}: {
-  tree: Cat1Node[];
-  allRows: SalesReportRow[];
-  bonusSummary: SalesReportSummaryRow[];
-  bonusRows: SalesReportRow[];
-  search: string;
-  onProductClick: (r: SalesReportRow) => void;
-}) {
-  const [open1, setOpen1] = useState<Set<string>>(new Set());
-  const [open2, setOpen2] = useState<Set<string>>(new Set());
-  const [open3, setOpen3] = useState<Set<string>>(new Set());
-  const [bonusOpen, setBonusOpen] = useState(false);
-
-  const toggle1 = (c: string) => setOpen1(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
-  const toggle2 = (c: string) => setOpen2(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
-  const toggle3 = (c: string) => setOpen3(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
-
-  function getRows(cat1: string, cat2: string | null, cat3: string | null) {
-    return allRows.filter(r =>
-      r.cat1 === cat1 && r.cat2 === cat2 && r.cat3 === cat3 && !r.is_bonus
-    );
   }
 
-  const bonusTotal = bonusSummary.reduce((s, r) => s + r.amount, 0);
-  const bonusQty = bonusSummary.reduce((s, r) => s + r.qty, 0);
+  const thCls = "px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200 bg-gray-50";
+  const tdCls = "px-3 py-2.5 text-center border-b border-gray-100 align-top";
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      {/* Table header */}
-      <div className="grid grid-cols-[1fr_90px_140px] gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-        <div>Категория / Наименование</div>
-        <div className="text-right">Кол-во</div>
-        <div className="text-right">Сумма</div>
-      </div>
-
-      {/* Category tree */}
-      {tree.map(n1 => (
-        <div key={n1.cat1}>
-          <AccordionRow label={n1.cat1} amount={n1.amount} qty={n1.qty} depth={0}
-            expanded={open1.has(n1.cat1)} onClick={() => toggle1(n1.cat1)}>
-            {n1.cat2s.map(n2 => {
-              const k2 = `${n1.cat1}__${n2.cat2}`;
-              if (!n2.cat2) {
+      <div className="overflow-x-auto">
+        <table style={{ minWidth: LEFT_W + (branches.length + 1) * COL_W + "px" }}>
+          <colgroup>
+            <col style={{ width: LEFT_W }} />
+            <col style={{ width: COL_W }} />
+            {branches.map(b => <col key={b.code} style={{ width: COL_W }} />)}
+          </colgroup>
+          <thead>
+            {/* Column headers */}
+            <tr>
+              <th className={cn(thCls, "text-left sticky left-0 z-10")} style={{ minWidth: LEFT_W }}>
+                Категория / Продукт
+              </th>
+              <th className={thCls}>Итого</th>
+              {branches.map(b => (
+                <th key={b.code} className={thCls}>
+                  <div>{b.name}</div>
+                </th>
+              ))}
+            </tr>
+            {/* Grand total row */}
+            <tr className="bg-blue-600 text-white">
+              <td className="px-3 py-2.5 text-sm font-bold sticky left-0 z-10 bg-blue-600" style={{ minWidth: LEFT_W }}>
+                Все продажи
+              </td>
+              <td className="px-3 py-2.5 text-center">
+                <div className="text-sm font-black text-white">{fmt(grandTotal.amount)}</div>
+                <div className="text-[11px] text-blue-200">{fmtQ(grandTotal.qty)}</div>
+              </td>
+              {branches.map(b => {
+                const c = branchTotals[b.code];
+                const share = grandTotal.amount > 0 && c ? (c.amount / grandTotal.amount * 100).toFixed(0) : "0";
                 return (
-                  <div key={k2}>
-                    <AccordionRow label="Позиции" amount={n2.amount} qty={n2.qty} depth={1}
-                      expanded={open2.has(k2)} onClick={() => toggle2(k2)}>
-                      <ProductRows
-                        rows={getRows(n1.cat1, null, null)}
-                        search={search}
-                        onProductClick={onProductClick}
-                      />
-                    </AccordionRow>
-                  </div>
+                  <td key={b.code} className="px-3 py-2.5 text-center">
+                    {c ? (
+                      <>
+                        <div className="text-sm font-bold text-white">{fmtM(c.amount)} ₸</div>
+                        <div className="text-[10px] text-blue-200">{fmtQ(c.qty)}</div>
+                        <div className="text-[10px] text-blue-300 font-semibold">{share}%</div>
+                      </>
+                    ) : <span className="text-blue-300 text-xs">—</span>}
+                  </td>
                 );
-              }
+              })}
+            </tr>
+          </thead>
+
+          <tbody>
+            {visibleRows.map(row => {
+              const hasChildren = row.children.length > 0;
+              const isOpen = open.has(row.id);
+              const isLeafOpen = openLeaf.has(row.id);
+              const indent = row.level * 20 + 12;
+              const products = (!hasChildren && isLeafOpen) ? getLeafProducts(row) : [];
+
               return (
-                <div key={k2}>
-                  <AccordionRow label={n2.cat2} amount={n2.amount} qty={n2.qty} depth={1}
-                    expanded={open2.has(k2)} onClick={() => toggle2(k2)}>
-                    {n2.cat3s.map(n3 => {
-                      const k3 = `${k2}__${n3.cat3}`;
-                      const leafRows = getRows(n1.cat1, n2.cat2, n3.cat3);
-                      return (
-                        <div key={k3}>
-                          <AccordionRow
-                            label={n3.cat3 ?? n2.cat2 ?? n1.cat1}
-                            amount={n3.amount} qty={n3.qty} depth={2}
-                            expanded={open3.has(k3)} onClick={() => toggle3(k3)}>
-                            <ProductRows rows={leafRows} search={search} onProductClick={onProductClick} />
-                          </AccordionRow>
-                        </div>
-                      );
-                    })}
-                  </AccordionRow>
-                </div>
+                <>
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      "hover:bg-gray-50/70 transition-colors",
+                      row.level === 0 ? "border-t-2 border-gray-200" : ""
+                    )}
+                  >
+                    {/* Category name cell */}
+                    <td
+                      className={cn(
+                        "px-0 py-0 sticky left-0 z-10 border-b border-gray-100",
+                        row.level === 0 ? "bg-white" : row.level === 1 ? "bg-gray-50/80" : "bg-white"
+                      )}
+                      style={{ minWidth: LEFT_W }}
+                    >
+                      <button
+                        className="w-full text-left flex items-center gap-1.5 py-2.5"
+                        style={{ paddingLeft: indent }}
+                        onClick={() => hasChildren ? toggle(row.id) : toggleLeaf(row.id)}
+                      >
+                        <span className="flex-shrink-0 text-gray-400">
+                          {hasChildren
+                            ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)
+                            : (isLeafOpen ? <ChevronDown size={12} className="text-blue-400" /> : <ChevronRight size={12} className="text-blue-300" />)
+                          }
+                        </span>
+                        <span className={cn(
+                          "truncate",
+                          row.level === 0 ? "text-sm font-bold text-gray-900" :
+                          row.level === 1 ? "text-xs font-semibold text-gray-700" :
+                          "text-xs font-medium text-gray-600"
+                        )}>
+                          {row.label}
+                        </span>
+                      </button>
+                    </td>
+
+                    {/* Total cell */}
+                    <td className={tdCls}>
+                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>
+                        {fmtM(row.total.amount)} ₸
+                      </div>
+                      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
+                    </td>
+
+                    {/* Per-branch cells */}
+                    {branches.map(b => (
+                      <td key={b.code} className={tdCls}>
+                        <PivotCell
+                          cell={row.byBranch[b.code]}
+                          rowTotal={row.total.amount}
+                          colTotal={branchTotals[b.code]?.amount ?? 0}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+
+                  {/* Leaf products */}
+                  {!hasChildren && isLeafOpen && products.map((product, pi) => (
+                    <tr
+                      key={`${row.id}_prod_${product.code}`}
+                      className={cn(
+                        "hover:bg-blue-50/40 transition-colors",
+                        pi % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+                      )}
+                    >
+                      <td className={cn("sticky left-0 z-10 bg-inherit border-b border-gray-50 py-1.5")} style={{ paddingLeft: indent + 24 }}>
+                        <button
+                          className="flex items-center gap-1.5 text-left group"
+                          onClick={() => onProductClick(product)}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-200 flex-shrink-0 group-hover:bg-blue-500" />
+                          <span className="text-xs text-gray-600 group-hover:text-blue-700 truncate max-w-[160px]">{product.name}</span>
+                          <span className="text-[9px] text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">↗</span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-1.5 text-center border-b border-gray-50">
+                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(product.amount)} ₸</div>
+                        <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(product.qty)}</div>
+                      </td>
+                      {branches.map(b => {
+                        const bRows = allRows.filter(r => r.code === product.code && r.branch_code === b.code && !r.is_bonus);
+                        const amt = bRows.reduce((s, r) => s + r.amount, 0);
+                        const qty = bRows.reduce((s, r) => s + r.qty, 0);
+                        return (
+                          <td key={b.code} className="px-3 py-1.5 text-center border-b border-gray-50">
+                            {amt > 0
+                              ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(amt)} ₸</div><div className="text-[10px] text-gray-400">{fmtQ(qty)}</div></>
+                              : <span className="text-gray-200 text-xs">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </>
               );
             })}
-          </AccordionRow>
-        </div>
-      ))}
 
-      {/* Bonuses section */}
-      {bonusRows.length > 0 && (
-        <div className="border-t-2 border-amber-100">
-          <div
-            className="grid grid-cols-[1fr_90px_140px] items-center gap-2 py-2.5 cursor-pointer select-none bg-amber-50/50 hover:bg-amber-50 border-b border-amber-100 transition-colors px-4"
-            onClick={() => setBonusOpen(v => !v)}
-          >
-            <div className="flex items-center gap-2">
-              {bonusOpen ? <ChevronDown size={13} className="text-amber-500" /> : <ChevronRight size={13} className="text-amber-500" />}
-              <span className="text-sm font-bold text-amber-700">БОНУСЫ</span>
-              <span className="text-[10px] text-amber-500 bg-amber-100 rounded px-1.5 py-0.5 font-semibold">бесплатная отгрузка</span>
-            </div>
-            <div className="text-right text-xs font-mono text-amber-600">{fmtQty(bonusQty)} шт</div>
-            <div className="text-right text-sm font-black text-amber-700">{bonusTotal > 0 ? fmt(bonusTotal) : "—"}</div>
-          </div>
-          {bonusOpen && (
-            <div>
-              {bonusRows.slice(0, 200).map((r, i) => (
-                <div key={r.id} className={cn(
-                  "grid grid-cols-[1fr_90px_130px] gap-2 items-center py-2 text-xs border-b border-amber-50 px-8",
-                  i % 2 === 0 ? "bg-white" : "bg-amber-50/10"
-                )}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-300 flex-shrink-0" />
-                    <span className="text-gray-700 truncate">{r.name}</span>
-                    <span className="flex-shrink-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5">
-                      {r.branch_name}
-                    </span>
+            {/* Bonuses row */}
+            {bonusTotal.amount > 0 && (
+              <tr className="bg-amber-50/40 border-t-2 border-amber-100">
+                <td className="sticky left-0 z-10 bg-amber-50 border-b border-amber-100 px-3 py-2.5" style={{ minWidth: LEFT_W }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-amber-700">БОНУСЫ</span>
+                    <span className="text-[10px] text-amber-500 bg-amber-100 rounded px-1.5 py-0.5 font-semibold">бесплатная отгрузка</span>
                   </div>
-                  <div className="text-right font-mono text-gray-500">{fmtQty(r.qty)}</div>
-                  <div className="text-right font-mono text-gray-600">
-                    {r.amount > 0 ? fmt(r.amount) : <span className="text-gray-300">—</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                </td>
+                <td className="px-3 py-2.5 text-center border-b border-amber-100">
+                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmtM(bonusTotal.amount)} ₸</div>
+                  <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusTotal.qty)}</div>
+                </td>
+                {branches.map(b => {
+                  const c = bonusByBranch[b.code];
+                  return (
+                    <td key={b.code} className="px-3 py-2.5 text-center border-b border-amber-100">
+                      {c && c.amount > 0
+                        ? <><div className="text-xs font-bold text-amber-600 tabular-nums">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-amber-400 tabular-nums">{fmtQ(c.qty)}</div></>
+                        : <span className="text-amber-200 text-xs">—</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-// ── KPI card ──────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color }: {
-  label: string; value: string; sub?: string; color: string;
+// ── TMZ остатки ───────────────────────────────────────────────────────────────
+function TmzRow({ tmzSummary, branches }: {
+  tmzSummary: { branch_code: string; branch_name: string; total_amount: number; total_qty: number; sku_count: number }[];
+  branches: BranchInfo[];
 }) {
+  const total = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
+  if (total === 0) return null;
+  const byCode = Object.fromEntries(tmzSummary.map(r => [r.branch_code, r]));
+
   return (
-    <div className={cn("rounded-xl px-4 py-3 border", color)}>
-      <div className="text-[10px] font-semibold uppercase tracking-wide opacity-60 truncate">{label}</div>
-      <div className="text-lg font-black truncate mt-0.5">{value}</div>
-      {sub && <div className="text-[11px] opacity-50 truncate">{sub}</div>}
+    <div className="bg-white border border-emerald-200 rounded-xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table style={{ minWidth: 220 + (branches.length + 1) * 136 + "px" }}>
+          <colgroup>
+            <col style={{ width: 220 }} />
+            <col style={{ width: 136 }} />
+            {branches.map(b => <col key={b.code} style={{ width: 136 }} />)}
+          </colgroup>
+          <tbody>
+            <tr className="bg-emerald-600 text-white">
+              <td className="sticky left-0 z-10 bg-emerald-600 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Package size={14} />
+                  <span className="text-sm font-bold">ТМЗ — остатки склада</span>
+                </div>
+              </td>
+              <td className="px-3 py-2.5 text-center">
+                <div className="text-sm font-black">{fmt(total)}</div>
+                <div className="text-[11px] text-emerald-200">{fmtQ(tmzSummary.reduce((s, r) => s + r.total_qty, 0))}</div>
+              </td>
+              {branches.map(b => {
+                const r = byCode[b.code];
+                return (
+                  <td key={b.code} className="px-3 py-2.5 text-center">
+                    {r
+                      ? <><div className="text-sm font-bold">{fmtM(r.total_amount)} ₸</div><div className="text-[10px] text-emerald-200">{fmtQ(r.total_qty)}</div><div className="text-[10px] text-emerald-300">{r.sku_count} SKU</div></>
+                      : <span className="text-emerald-300 text-xs">—</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -583,8 +523,6 @@ export default function SalesPage() {
   const { data: dates = [] } = useSalesReportDates();
   const { data: branchList = [] } = useSalesReportBranches();
   const [selectedDate, setSelectedDate] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("");
-  const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<SalesReportRow | null>(null);
 
@@ -592,62 +530,53 @@ export default function SalesPage() {
     if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
   }, [dates, selectedDate]);
 
-  const params = {
-    period_date: selectedDate || undefined,
-    branch_code: selectedBranch || undefined,
-  };
+  const p = { period_date: selectedDate || undefined };
 
-  const { data: summary = [], isLoading } = useSalesReportSummary({ ...params, is_bonus: false });
-  const { data: bonusSummary = [] } = useSalesReportSummary({ ...params, is_bonus: true });
-  const { data: totals = [] } = useSalesReportTotals({ period_date: selectedDate || undefined });
-  const { data: allRows = [] } = useSalesReportRows({ ...params, is_bonus: false });
-  const { data: bonusRows = [] } = useSalesReportRows({ ...params, is_bonus: true });
+  const { data: summary = [], isLoading } = useSalesReportSummary({ ...p, is_bonus: false });
+  const { data: bonusSummary = [] } = useSalesReportSummary({ ...p, is_bonus: true });
+  const { data: totals = [] } = useSalesReportTotals(p);
+  const { data: allRows = [] } = useSalesReportRows({ ...p, is_bonus: false });
+  const { data: bonusRows = [] } = useSalesReportRows({ ...p, is_bonus: true });
+  const { data: tmzSummary = [] } = useTmzSummary(
+    selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined
+  );
 
-  const tree = useMemo(() => buildTree(summary), [summary]);
-  const grandTotal = useMemo(() => {
-    if (selectedBranch) {
-      return totals.find(t => t.branch_code === selectedBranch)?.amount ?? 0;
-    }
-    return totals.reduce((s, r) => s + r.amount, 0);
-  }, [totals, selectedBranch]);
-  const grandQty = useMemo(() => {
-    if (selectedBranch) {
-      return totals.find(t => t.branch_code === selectedBranch)?.qty ?? 0;
-    }
-    return totals.reduce((s, r) => s + r.qty, 0);
-  }, [totals, selectedBranch]);
-  const topCat = tree[0]?.cat1 ?? "—";
+  const tree = useMemo(() => buildPivotTree(summary), [summary]);
+
+  const branchTotals = useMemo(() => {
+    const m: Record<string, Cell> = {};
+    for (const t of totals) m[t.branch_code] = { qty: t.qty, amount: t.amount };
+    return m;
+  }, [totals]);
+
+  const grandTotal = totals.reduce((s, t) => s + t.amount, 0);
+  const grandQty = totals.reduce((s, t) => s + t.qty, 0);
+  const topCat = tree[0]?.label ?? "—";
   const isEmpty = !isLoading && summary.length === 0;
-  const activeBranchName = selectedBranch
-    ? branchList.find(b => b.code === selectedBranch)?.name ?? selectedBranch
-    : null;
+
+  // Sort branches by total amount desc
+  const orderedBranches = useMemo(() =>
+    [...branchList].sort((a, b) => (branchTotals[b.code]?.amount ?? 0) - (branchTotals[a.code]?.amount ?? 0)),
+    [branchList, branchTotals]);
 
   return (
-    <div className="space-y-4 max-w-[1400px]">
+    <div className="space-y-4 max-w-[1600px]">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <TrendingUp size={20} className="text-blue-600" />
           <h1 className="text-xl font-bold text-gray-900">Продажи</h1>
-          {activeBranchName && (
-            <span className="flex items-center gap-1.5 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1">
-              {activeBranchName}
-              <button onClick={() => setSelectedBranch("")} className="text-blue-400 hover:text-blue-700">
-                <X size={12} />
-              </button>
-            </span>
-          )}
         </div>
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
+        <div className="ml-auto flex items-center gap-2">
           <select
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={e => setSelectedDate(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             {dates.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
           <button
-            onClick={() => setShowUpload(!showUpload)}
+            onClick={() => setShowUpload(v => !v)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
               showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700"
@@ -658,39 +587,44 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {showUpload && <UploadBlock onDone={() => { setShowUpload(false); }} />}
+      {showUpload && <UploadBlock onDone={() => setShowUpload(false)} />}
 
       {/* KPI strip */}
       {!isEmpty && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KpiCard
-            label="Реализация"
-            value={fmt(grandTotal)}
-            sub={`${fmtQty(grandQty)} шт`}
-            color="bg-blue-600 text-white border-blue-600"
-          />
-          <KpiCard
-            label="Топ категория"
-            value={topCat}
-            sub={tree[0] ? fmtShort(tree[0].amount) + " ₸" : undefined}
-            color="bg-white text-gray-900 border-gray-200"
-          />
-          <KpiCard
-            label="Филиалов"
-            value={String(totals.length || branchList.length)}
-            sub={selectedBranch ? "выбран 1" : "в отчёте"}
-            color="bg-white text-gray-900 border-gray-200"
-          />
-          <KpiCard
-            label="Позиций"
-            value={fmtQty(allRows.length)}
-            sub="уникальных записей"
-            color="bg-white text-gray-900 border-gray-200"
-          />
+          <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
+            <div className="text-lg font-black">{fmt(grandTotal)}</div>
+            <div className="text-[11px] text-blue-200">{fmtQ(grandQty)}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Топ категория</div>
+            <div className="text-sm font-black text-gray-900 truncate">{topCat}</div>
+            <div className="text-[11px] text-gray-400">{tree[0] ? fmtM(tree[0].total.amount) + " ₸" : ""}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
+            <div className="text-lg font-black text-gray-900">{tree.length}</div>
+            <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Позиций</div>
+            <div className="text-lg font-black text-gray-900">
+              {(() => { const s = new Set(allRows.map(r => r.code || r.name)); return s.size.toLocaleString("ru"); })()}
+            </div>
+            <div className="text-[11px] text-gray-400">уникальных SKU</div>
+          </div>
         </div>
       )}
 
-      {/* Main layout: chart + accordion */}
+      {/* Hint */}
+      {!isEmpty && (
+        <p className="text-xs text-gray-400">
+          Нажмите на категорию, чтобы раскрыть подкатегории. Листовая категория раскроет список товаров — кликните на товар для детального просмотра по филиалам.
+        </p>
+      )}
+
+      {/* Main content */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">
           <Loader2 size={24} className="animate-spin mr-2" />Загрузка...
@@ -699,64 +633,24 @@ export default function SalesPage() {
         <div className="bg-white border border-gray-200 rounded-xl p-16 text-center">
           <TrendingUp size={36} className="text-gray-200 mx-auto mb-3" />
           <div className="text-gray-400 text-sm font-medium">
-            {dates.length === 0
-              ? "Данные не загружены. Нажмите «Загрузить»."
-              : "Нет данных по выбранным фильтрам."}
+            {dates.length === 0 ? "Данные не загружены. Нажмите «Загрузить»." : "Нет данных по выбранному периоду."}
           </div>
         </div>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-4 items-start">
-          {/* Left: branch chart (sticky on large screens) */}
-          {totals.length > 0 && (
-            <div className="w-full lg:w-72 flex-shrink-0 lg:sticky lg:top-4">
-              <BranchChart
-                totals={totals}
-                selectedBranch={selectedBranch}
-                onSelect={setSelectedBranch}
-              />
-            </div>
-          )}
-
-          {/* Right: search + accordion */}
-          <div className="flex-1 min-w-0 space-y-3">
-            {/* Search bar */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 max-w-xs">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Поиск по наименованию..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-              <div className="text-sm text-gray-400 ml-auto">
-                {tree.length} категорий
-              </div>
-            </div>
-
-            <CategoryAccordion
-              tree={tree}
-              allRows={allRows}
-              bonusSummary={bonusSummary}
-              bonusRows={bonusRows}
-              search={search}
-              onProductClick={setSelectedProduct}
-            />
-          </div>
+        <div className="space-y-4">
+          <PivotTable
+            tree={tree}
+            branches={orderedBranches}
+            branchTotals={branchTotals}
+            allRows={allRows}
+            bonusRows={bonusRows}
+            bonusSummary={bonusSummary}
+            onProductClick={setSelectedProduct}
+          />
+          <TmzRow tmzSummary={tmzSummary} branches={orderedBranches} />
         </div>
       )}
 
-      {/* Product detail modal */}
       {selectedProduct && (
         <ProductModal
           product={selectedProduct}
