@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, distinct
+from sqlalchemy import select
 from db import get_db
 from models.models import TmzEntry
 
@@ -27,7 +27,7 @@ BRANCH_NAMES = {
 @router.get("/dates")
 async def get_tmz_dates(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(distinct(TmzEntry.period_date)).order_by(TmzEntry.period_date.desc())
+        select(TmzEntry.period_date).distinct().order_by(TmzEntry.period_date.desc())
     )
     return [str(d) for d in result.scalars().all()]
 

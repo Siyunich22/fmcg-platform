@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import {
   useTmz, useTmzDates, useTmzSummary, useUploadTmzFiles,
@@ -10,9 +10,11 @@ import {
   Package, Upload, CheckCircle, XCircle, Loader2,
   ChevronUp, ChevronDown, Search, X,
 } from "lucide-react";
-import { formatMoney } from "@/lib/api";
-
 type SortKey = "product_name" | "branch_name" | "qty_end" | "amount_end";
+
+function fmt(n: number) {
+  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
+}
 type SortDir = "asc" | "desc";
 
 const BRANCH_ORDER = [
@@ -113,7 +115,7 @@ function SummaryCards({ summary }: { summary: TmzSummaryRow[] }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">Итого по всем филиалам</div>
-        <div className="text-xl font-black text-gray-900">{formatMoney(grandTotal)}</div>
+        <div className="text-xl font-black text-gray-900">{fmt(grandTotal)}</div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
         {sorted.map((r) => (
@@ -122,7 +124,7 @@ function SummaryCards({ summary }: { summary: TmzSummaryRow[] }) {
             <div className="text-xs font-semibold text-gray-500 truncate">
               {r.branch_name}{r.sub_branch ? ` · ${r.sub_branch}` : ""}
             </div>
-            <div className="text-sm font-black text-gray-900 mt-0.5">{formatMoney(r.total_amount)}</div>
+            <div className="text-sm font-black text-gray-900 mt-0.5">{fmt(r.total_amount)}</div>
             <div className="text-xs text-gray-400">{r.total_qty.toLocaleString("ru")} шт · {r.sku_count} SKU</div>
           </div>
         ))}
@@ -139,10 +141,17 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 export default function TmzPage() {
   const { data: dates = [] } = useTmzDates();
   const [selectedDate, setSelectedDate] = useState<string>("");
+
+  // Auto-select the first available date when dates load
+  useEffect(() => {
+    if (dates.length > 0 && !selectedDate) {
+      setSelectedDate(dates[0]);
+    }
+  }, [dates, selectedDate]);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("branch_name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>("amount_end");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [showUpload, setShowUpload] = useState(false);
 
   const periodDate = selectedDate || dates[0] || undefined;
@@ -178,8 +187,12 @@ export default function TmzPage() {
   }, [rows, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(key); setSortDir("asc"); }
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir(key === "amount_end" || key === "qty_end" ? "desc" : "asc");
+    }
   }
 
   function handleUploaded() {
@@ -348,7 +361,7 @@ export default function TmzPage() {
                       {row.qty_end > 0 ? row.qty_end.toLocaleString("ru") : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold text-gray-900">
-                      {row.amount_end !== 0 ? formatMoney(row.amount_end) : <span className="text-gray-300">—</span>}
+                      {row.amount_end !== 0 ? fmt(row.amount_end) : <span className="text-gray-300">—</span>}
                     </td>
                   </tr>
                 ))}
@@ -362,7 +375,7 @@ export default function TmzPage() {
                     {sorted.reduce((s, r) => s + r.qty_end, 0).toLocaleString("ru")}
                   </td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-gray-900">
-                    {formatMoney(sorted.reduce((s, r) => s + r.amount_end, 0))}
+                    {fmt(sorted.reduce((s, r) => s + r.amount_end, 0))}
                   </td>
                 </tr>
               </tfoot>
