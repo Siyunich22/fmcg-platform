@@ -17,7 +17,7 @@ BRANCH_NAMES = {
     "KOKSHETAU": "Кокшетау",
     "SEMEY": "Семей",
     "ASTANA": "Астана",
-    "KARAGANDA": "Карагнда",
+    "KARAGANDA": "Караганда",
     "SHYMKENT": "Шымкент",
     "KOSTANAY": "Костанай",
     "PAVLODAR": "Павлодар",
