@@ -535,21 +535,26 @@ async def upload_tmz_files(
 
     period_dates = {e["period_date"] for e in all_entries}
 
-    # Delete existing entries for same period
-    for pd in period_dates:
-        await db.execute(delete(TmzEntry).where(TmzEntry.period_date == pd))
+    try:
+        # Delete existing entries for same period
+        for pd in period_dates:
+            await db.execute(delete(TmzEntry).where(TmzEntry.period_date == pd))
 
-    for e in all_entries:
-        db.add(TmzEntry(
-            branch_code=e["branch_code"],
-            sub_branch=e.get("sub_branch"),
-            product_name=e["product_name"],
-            qty_end=e["qty_end"],
-            amount_end=e["amount_end"],
-            period_date=e["period_date"],
-        ))
+        for e in all_entries:
+            db.add(TmzEntry(
+                branch_code=e["branch_code"],
+                sub_branch=e.get("sub_branch"),
+                product_name=e["product_name"],
+                qty_end=e["qty_end"],
+                amount_end=e["amount_end"],
+                period_date=e["period_date"],
+            ))
 
-    await db.commit()
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(500, f"Ошибка сохранения в БД: {exc}") from exc
+
     branches = sorted({e["branch_code"] for e in all_entries})
     return {
         "ok": True,
