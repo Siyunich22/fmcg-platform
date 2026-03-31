@@ -388,6 +388,105 @@ export const useUploadTmzFiles = () => {
   });
 };
 
+// ── Sales Report hooks ───────────────────────────────────────────────────────
+
+export interface SalesReportRow {
+  id: string;
+  code: string;
+  name: string;
+  cat1: string | null;
+  cat2: string | null;
+  cat3: string | null;
+  cat4: string | null;
+  is_bonus: boolean;
+  branch_code: string;
+  branch_name: string;
+  qty: number;
+  amount: number;
+}
+
+export interface SalesReportSummaryRow {
+  cat1: string | null;
+  cat2: string | null;
+  cat3: string | null;
+  branch_code: string;
+  branch_name: string;
+  qty: number;
+  amount: number;
+}
+
+export interface SalesReportTotal {
+  branch_code: string;
+  branch_name: string;
+  qty: number;
+  amount: number;
+}
+
+export const useSalesReportDates = () =>
+  useQuery<string[]>({
+    queryKey: ["sales-report-dates"],
+    queryFn: () => api.get("/api/sales-report/dates").then((r) => r.data),
+  });
+
+export const useSalesReportBranches = () =>
+  useQuery<{ code: string; name: string }[]>({
+    queryKey: ["sales-report-branches"],
+    queryFn: () => api.get("/api/sales-report/branches").then((r) => r.data),
+  });
+
+export const useSalesReportSummary = (params: {
+  period_date?: string;
+  branch_code?: string;
+  is_bonus?: boolean;
+}) =>
+  useQuery<SalesReportSummaryRow[]>({
+    queryKey: ["sales-report-summary", params],
+    queryFn: () => api.get("/api/sales-report/summary", { params }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const useSalesReportRows = (params: {
+  period_date?: string;
+  branch_code?: string;
+  cat1?: string;
+  cat2?: string;
+  is_bonus?: boolean;
+  search?: string;
+}) =>
+  useQuery<SalesReportRow[]>({
+    queryKey: ["sales-report-rows", params],
+    queryFn: () => api.get("/api/sales-report/rows", { params }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const useSalesReportTotals = (params: {
+  period_date?: string;
+  branch_code?: string;
+}) =>
+  useQuery<SalesReportTotal[]>({
+    queryKey: ["sales-report-totals", params],
+    queryFn: () => api.get("/api/sales-report/totals", { params }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const useUploadSalesReport = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; rows: number; branches: string[] }, Error, File>({
+    mutationFn: (file) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.post("/api/upload/sales-report", form).then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-report-dates"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-summary"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-rows"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-totals"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-branches"] });
+    },
+  });
+};
+
 export const useUploadStock = () => {
   const qc = useQueryClient();
   return useMutation<UploadResponse, Error, File>({

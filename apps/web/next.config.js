@@ -10,6 +10,7 @@ const nextConfig = {
       "upload",
       "dashboard",
       "sales",
+      "sales-report",
       "stock",
       "debts",
       "orders",

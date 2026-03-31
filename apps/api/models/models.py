@@ -190,6 +190,23 @@ class TmzEntry(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 
+class SalesReportEntry(Base):
+    __tablename__ = "sales_report_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_date = Column(Date, nullable=False)
+    code = Column(String(50))
+    name = Column(Text, nullable=False)
+    cat1 = Column(String(300))   # top category (e.g. ВАРЕНЬЕ)
+    cat2 = Column(String(300))   # subcategory
+    cat3 = Column(String(300))   # sub-subcategory
+    cat4 = Column(String(300))   # sub-sub-subcategory
+    is_bonus = Column(Boolean, default=False)
+    branch_code = Column(String(20), nullable=False)
+    qty = Column(Numeric(14, 3), default=0)
+    amount = Column(Numeric(18, 2), default=0)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

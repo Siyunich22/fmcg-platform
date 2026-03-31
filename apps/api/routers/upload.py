@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from db import get_db
-from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry, TmzEntry
+from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry, TmzEntry, SalesReportEntry
 from services.parser_sales import parse_sales_file, detect_category, detect_subcategory, is_group_node
 from services.parser_stock import parse_stock_file, _extract_date_from_filename as _stock_date_from_name
 from services.parser_osv import parse_osv_folder
@@ -562,6 +562,52 @@ async def upload_tmz_files(
         "branches": branches,
         "period_dates": [str(d) for d in sorted(period_dates)],
         "errors": errors,
+    }
+
+
+@router.post("/sales-report")
+async def upload_sales_report(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload sales report Excel from 1C (hierarchical format)."""
+    from services.parser_sales_report import parse_sales_report
+
+    if not file.filename or not file.filename.lower().endswith((".xls", ".xlsx")):
+        raise HTTPException(422, "Неподдерживаемый формат. Нужен .xls или .xlsx")
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_path = tmp_dir / file.filename
+    try:
+        with open(tmp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        entries = parse_sales_report(str(tmp_path))
+    except Exception as exc:
+        raise HTTPException(500, f"Ошибка парсинга: {exc}") from exc
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not entries:
+        raise HTTPException(422, "Файл не содержит данных")
+
+    period_dates = {e["period_date"] for e in entries}
+
+    try:
+        for pd in period_dates:
+            await db.execute(delete(SalesReportEntry).where(SalesReportEntry.period_date == pd))
+        for e in entries:
+            db.add(SalesReportEntry(**{k: v for k, v in e.items()}))
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(500, f"Ошибка сохранения: {exc}") from exc
+
+    branches = sorted({e["branch_code"] for e in entries})
+    return {
+        "ok": True,
+        "rows": len(entries),
+        "branches": branches,
+        "period_dates": [str(d) for d in sorted(period_dates)],
     }
 
 

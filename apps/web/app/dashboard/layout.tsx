@@ -12,7 +12,8 @@ import { useAlerts } from "@/hooks/useApi";
 
 const NAV = [
   { href: "/dashboard",        label: "Дашборд",   icon: LayoutDashboard, section: "overview" },
-  { href: "/dashboard/sales",  label: "Продажи",   icon: TrendingUp,       section: "overview" },
+  { href: "/dashboard/sales",         label: "Продажи",        icon: TrendingUp,    section: "overview" },
+  { href: "/dashboard/sales-report", label: "Отчёт продаж",   icon: TrendingUp,    section: "overview" },
   { href: "/dashboard/stock",  label: "Остатки",   icon: Package,          section: "overview" },
   { href: "/dashboard/debts",  label: "Дебиторка", icon: AlertCircle,      section: "overview" },
   { href: "/dashboard/tmz",    label: "ТМЗ",       icon: Package,          section: "overview" },
@@ -162,6 +163,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "/dashboard/orders": "Заявки",
     "/dashboard/orders/new": "Новая заявка",
     "/dashboard/upload": "Загрузка данных",
+    "/dashboard/sales-report": "Отчёт продаж",
   }[pathname] ?? "Dashboard";
 
   return (
