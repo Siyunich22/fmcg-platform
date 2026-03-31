@@ -152,6 +152,10 @@ def parse_sales_report(filepath: str) -> list[dict]:
         if not row["is_leaf"]:
             continue
 
+        # Skip rows with empty name (summary/header rows)
+        if not name:
+            continue
+
         # Build hierarchy (from context at lower indent levels)
         sorted_levels = sorted(k for k in ctx.keys() if k < indent)
         cats = [ctx[k] for k in sorted_levels if k >= 2]  # skip indent=0 (ТОВАРЫ)
