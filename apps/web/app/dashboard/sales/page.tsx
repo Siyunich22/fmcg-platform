@@ -1014,19 +1014,19 @@ export default function SalesPage() {
       {!isEmpty && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Отгрузки (всего)</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
             <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
             <div className="text-[11px] text-blue-200">{fmtQ(combinedGrandQty)}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
-            <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
-            <div className="text-[11px] text-gray-400">{combinedGrandTotal > 0 ? (bonusTotal / combinedGrandTotal * 100).toFixed(1) : 0}% от отгрузок</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
             <div className="text-xl font-black text-gray-900">{tree.length}</div>
             <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Платные продажи</div>
+            <div className="text-xl font-black text-indigo-600">{fmt(grandTotal)}</div>
+            <div className="text-[11px] text-gray-400">{fmtQ(grandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
