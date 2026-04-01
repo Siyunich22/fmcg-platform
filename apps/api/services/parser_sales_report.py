@@ -158,12 +158,23 @@ def parse_sales_report(filepath: str) -> list[dict]:
 
         # Build hierarchy (from context at lower indent levels)
         sorted_levels = sorted(k for k in ctx.keys() if k < indent)
-        cats = [ctx[k] for k in sorted_levels if k >= 2]  # skip indent=0 (ТОВАРЫ)
+        if in_bonus:
+            # Skip the БОНУСЫ level (indent=2) — use indent=4+ as categories
+            # This puts масло/варенье/чай under their own cat names
+            cats = [ctx[k] for k in sorted_levels if k >= 4]
+        else:
+            cats = [ctx[k] for k in sorted_levels if k >= 2]  # skip indent=0 (ТОВАРЫ)
 
-        cat1 = cats[0] if len(cats) > 0 else None
-        cat2 = cats[1] if len(cats) > 1 else None
-        cat3 = cats[2] if len(cats) > 2 else None
-        cat4 = cats[3] if len(cats) > 3 else None
+        # Strip " Бонусы" / " бонусы" suffix from category names
+        def _clean(s: str | None) -> str | None:
+            if s is None:
+                return None
+            return re.sub(r'\s+[Бб]онус[ыь]?\s*$', '', s).strip() or s
+
+        cat1 = _clean(cats[0]) if len(cats) > 0 else None
+        cat2 = _clean(cats[1]) if len(cats) > 1 else None
+        cat3 = _clean(cats[2]) if len(cats) > 2 else None
+        cat4 = _clean(cats[3]) if len(cats) > 3 else None
 
         for bc, (qty, amt) in row["branch_data"].items():
             if qty == 0 and amt == 0:
