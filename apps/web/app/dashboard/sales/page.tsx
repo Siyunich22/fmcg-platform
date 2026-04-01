@@ -524,14 +524,57 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
   const [open, setOpen] = useState(new Set<string>());
   const [openLeaf, setOpenLeaf] = useState(new Set<string>());
   const [openBranch, setOpenBranch] = useState(new Set<string>());
+  const [filterBranch, setFilterBranch] = useState("");
+  const [filterCat1, setFilterCat1] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
   const tog = (s: Set<string>, id: string) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; };
 
+  const cat1Options = useMemo(() => tree.map(n => n.label), [tree]);
+
   function flatten(nodes: PivotNode[], out: PivotNode[] = []) {
-    for (const n of nodes) { out.push(n); if (open.has(n.id) && n.children.length) flatten(n.children, out); }
+    for (const n of nodes) {
+      if (filterCat1 && n.level === 0 && n.cat1 !== filterCat1) continue;
+      if (filterBranch && (!n.byBranch[filterBranch] || n.byBranch[filterBranch].amount === 0)) continue;
+      out.push(n);
+      if (open.has(n.id) && n.children.length) flatten(n.children, out);
+    }
     return out;
   }
-  const visible = useMemo(() => flatten(tree), [tree, open]);
-  const grand: Cell = { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
+  const visible = useMemo(() => flatten(tree), [tree, open, filterBranch, filterCat1]);
+
+  // Grand total respects branch filter
+  const grand: Cell = useMemo(() => {
+    if (filterBranch) {
+      const c = branchTotals[filterBranch];
+      return c ?? { qty: 0, amount: 0 };
+    }
+    return { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
+  }, [tree, branchTotals, filterBranch]);
+
+  // Amount/qty for a row respects branch filter
+  const getCell = (row: PivotNode): Cell => filterBranch
+    ? (row.byBranch[filterBranch] ?? { qty: 0, amount: 0 })
+    : row.total;
+
+  // Search results: flat list of matching products
+  const searchResults = useMemo(() => {
+    if (!filterSearch.trim()) return [];
+    const sq = filterSearch.toLowerCase();
+    const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
+    for (const r of [...allRows, ...bonusRows]) {
+      if (!r.name.toLowerCase().includes(sq)) continue;
+      if (filterCat1 && r.cat1 !== filterCat1) continue;
+      if (filterBranch && r.branch_code !== filterBranch) continue;
+      const k = r.code || r.name;
+      if (!map.has(k)) map.set(k, { ...r, _qty: 0, _amt: 0 });
+      const g = map.get(k)!; g._qty += r.qty; g._amt += r.amount;
+    }
+    return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.amount - a.amount);
+  }, [filterSearch, allRows, bonusRows, filterCat1, filterBranch]);
+
+  const hasFilter = !!(filterBranch || filterCat1 || filterSearch);
+
+  const grand0: Cell = { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
 
   function getLeafProducts(node: PivotNode) {
     const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
@@ -561,39 +604,106 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
   }
 
   return (
+    <div className="space-y-3">
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Поиск по продукту..." value={filterSearch} onChange={e => setFilterSearch(e.target.value)}
+            className="pl-8 pr-7 py-2 text-sm border border-gray-200 rounded-lg w-56 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          {filterSearch && <button onClick={() => setFilterSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={12} /></button>}
+        </div>
+        <select value={filterCat1} onChange={e => setFilterCat1(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Все категории</option>
+          {cat1Options.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Все филиалы</option>
+          {branches.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+        </select>
+        {hasFilter && (
+          <button onClick={() => { setFilterBranch(""); setFilterCat1(""); setFilterSearch(""); }}
+            className="flex items-center gap-1 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
+            <X size={11} />Сбросить
+          </button>
+        )}
+        {hasFilter && (
+          <span className="ml-auto text-xs text-gray-400">
+            {filterSearch ? `${searchResults.length} продуктов` : `${visible.length} строк`}
+          </span>
+        )}
+      </div>
+
+      {/* Search results (flat list) */}
+      {filterSearch.trim() && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            Результаты поиска: {searchResults.length} позиций
+          </div>
+          {searchResults.length === 0
+            ? <div className="px-4 py-8 text-center text-sm text-gray-400">Ничего не найдено</div>
+            : searchResults.slice(0, 200).map((p, pi) => (
+              <button key={p.code || p.name + pi}
+                onClick={() => onProductClick(p)}
+                className={cn("w-full text-left flex items-center gap-3 px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50/40 group",
+                  pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}>
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover:bg-blue-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-gray-700 group-hover:text-blue-700 truncate">{p.name}</div>
+                  {p.cat1 && <div className="text-[10px] text-gray-400 truncate">{[p.cat1, p.cat2].filter(Boolean).join(" › ")}</div>}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-xs font-bold text-gray-800 tabular-nums">{fmt(p.amount)}</div>
+                  <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                </div>
+              </button>
+            ))}
+        </div>
+      )}
+
+    {!filterSearch.trim() && (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       {/* Grand total header */}
       <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-4 flex-wrap">
-        <span className="text-sm font-bold flex-1 min-w-0">Все продажи</span>
+        <span className="text-sm font-bold flex-1 min-w-0">
+          {filterBranch ? branches.find(b => b.code === filterBranch)?.name : filterCat1 || "Все продажи"}
+        </span>
         <div className="text-right">
           <div className="text-base font-black tabular-nums">{fmt(grand.amount)}</div>
           <div className="text-[10px] text-blue-200 tabular-nums">{fmtQ(grand.qty)}</div>
+          {filterBranch && grand0.amount > 0 && (
+            <div className="text-[10px] text-blue-200">{(grand.amount / grand0.amount * 100).toFixed(1)}% от итого</div>
+          )}
         </div>
-        <div className="w-40">
-          <div className="flex h-2 rounded-full overflow-hidden bg-blue-500">
-            {branches.map((b, bi) => {
-              const c = branchTotals[b.code];
-              const pct = grand.amount > 0 && c ? c.amount / grand.amount * 100 : 0;
-              if (pct < 0.8) return null;
-              return <div key={b.code} style={{ width: `${pct}%`, backgroundColor: C[bi % C.length] }} title={`${b.name}: ${pct.toFixed(0)}%`} />;
-            })}
+        {!filterBranch && (
+          <div className="w-40">
+            <div className="flex h-2 rounded-full overflow-hidden bg-blue-500">
+              {branches.map((b, bi) => {
+                const c = branchTotals[b.code];
+                const pct = grand.amount > 0 && c ? c.amount / grand.amount * 100 : 0;
+                if (pct < 0.8) return null;
+                return <div key={b.code} style={{ width: `${pct}%`, backgroundColor: C[bi % C.length] }} title={`${b.name}: ${pct.toFixed(0)}%`} />;
+              })}
+            </div>
+            <div className="flex flex-wrap gap-x-2 mt-1">
+              {branches.slice(0, 5).map((b, bi) => {
+                const c = branchTotals[b.code];
+                if (!c || c.amount === 0) return null;
+                const pct = grand.amount > 0 ? c.amount / grand.amount * 100 : 0;
+                return <span key={b.code} className="text-[9px]" style={{ color: C[bi % C.length] }}>{b.name.slice(0, 4)} {pct.toFixed(0)}%</span>;
+              })}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-x-2 mt-1">
-            {branches.slice(0, 5).map((b, bi) => {
-              const c = branchTotals[b.code];
-              if (!c || c.amount === 0) return null;
-              const pct = grand.amount > 0 ? c.amount / grand.amount * 100 : 0;
-              return <span key={b.code} className="text-[9px] text-blue-200" style={{ color: C[bi % C.length] }}>{b.name.slice(0, 4)} {pct.toFixed(0)}%</span>;
-            })}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Column headers */}
       <div className="grid gap-0 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
         style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
         <div>Категория</div>
-        <div className="text-right">Итого</div>
+        <div className="text-right">{filterBranch ? branches.find(b => b.code === filterBranch)?.name : "Итого"}</div>
         <div className="text-right">Кол-во</div>
         <div className="pl-3">Распределение</div>
       </div>
@@ -626,13 +736,13 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
                 </span>
               </button>
               <div className="text-right pr-4 py-2.5">
-                <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(row.total.amount)}</div>
+                <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(getCell(row).amount)}</div>
                 {row.level === 0 && grand.amount > 0 && (
-                  <div className="text-[9px] text-gray-400">{(row.total.amount / grand.amount * 100).toFixed(1)}%</div>
+                  <div className="text-[9px] text-gray-400">{(getCell(row).amount / grand.amount * 100).toFixed(1)}%</div>
                 )}
               </div>
               <div className="text-right pr-4 py-2.5">
-                <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
+                <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(getCell(row).qty)}</div>
               </div>
               <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
                 onClick={() => setOpenBranch(s => tog(s, row.id))}>
@@ -702,6 +812,8 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
           </div>
         );
       })}
+    </div>
+    )}
     </div>
   );
 }
