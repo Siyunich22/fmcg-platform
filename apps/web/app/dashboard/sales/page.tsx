@@ -8,6 +8,7 @@ import {
 import {
   useSalesReportDates, useSalesReportBranches, useSalesReportSummary,
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
+  useSalesReportStats, useClearSalesReport,
   useTmzSummary,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
   type TmzSummaryRow,
@@ -72,35 +73,134 @@ function buildPivotTree(rows: SalesReportSummaryRow[]): PivotNode[] {
   return [...m1.values()].map(e => e.n).sort((a, b) => b.total.amount - a.total.amount);
 }
 
-// ── Upload ────────────────────────────────────────────────────────────────────
-function UploadBlock({ onDone }: { onDone: () => void }) {
+// ── Upload + Diagnostics ──────────────────────────────────────────────────────
+function UploadBlock({ onDone, selectedDate }: { onDone: () => void; selectedDate: string }) {
   const upload = useUploadSalesReport();
+  const clearMut = useClearSalesReport();
+  const { data: stats, refetch: refetchStats } = useSalesReportStats(selectedDate || undefined);
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [result, setResult] = useState<{ rows: number; branches: string[] } | null>(null);
   const [msg, setMsg] = useState("");
+
   const onDrop = useCallback(async (files: File[]) => {
     if (!files.length) return;
     setState("loading");
     try {
       const res = await upload.mutateAsync(files[0]);
-      setMsg(`${res.rows.toLocaleString("ru")} строк · ${res.branches.join(", ")}`);
-      setState("success"); onDone();
+      setResult(res);
+      setState("success");
+      onDone();
+      refetchStats();
     } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : "Ошибка"); setState("error");
+      setMsg(e instanceof Error ? e.message : "Ошибка загрузки");
+      setState("error");
     }
-  }, [upload, onDone]);
+  }, [upload, onDone, refetchStats]);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop, multiple: false, disabled: state === "loading",
     accept: { "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
   });
+
+  const handleClear = async () => {
+    if (!selectedDate || !confirm(`Удалить все данные за ${selectedDate}?`)) return;
+    await clearMut.mutateAsync(selectedDate);
+    setState("idle");
+    setResult(null);
+  };
+
+  // Group stats by branch (non-bonus)
+  const salesBranches = stats?.by_branch.filter(b => !b.is_bonus) ?? [];
+  const bonusBranches = stats?.by_branch.filter(b => b.is_bonus) ?? [];
+
   return (
-    <div {...getRootProps()} className={cn("border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all",
-      isDragActive ? "border-blue-500 bg-blue-50" : state === "success" ? "border-green-400 bg-green-50"
-        : state === "error" ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-blue-300")}>
-      <input {...getInputProps()} />
-      {state === "loading" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin text-blue-500" />Обрабатываем...</div>}
-      {state === "success" && <div className="flex items-center justify-center gap-2 text-sm text-green-700"><CheckCircle size={15} />Загружено: {msg} <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Ещё</button></div>}
-      {state === "error" && <div className="flex items-center justify-center gap-2 text-sm text-red-600"><XCircle size={15} />{msg} <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Повторить</button></div>}
-      {state === "idle" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Upload size={14} />{isDragActive ? "Отпустите" : "Загрузить отчёт продаж .xlsx"}</div>}
+    <div className="space-y-3">
+      {/* Dropzone */}
+      <div {...getRootProps()} className={cn("border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all",
+        isDragActive ? "border-blue-500 bg-blue-50" : state === "success" ? "border-green-400 bg-green-50"
+          : state === "error" ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-blue-300")}>
+        <input {...getInputProps()} />
+        {state === "loading" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin text-blue-500" />Обрабатываем...</div>}
+        {state === "success" && result && (
+          <div className="text-sm text-green-700">
+            <div className="flex items-center justify-center gap-2 mb-1"><CheckCircle size={15} /><span className="font-semibold">Загружено {result.rows.toLocaleString("ru")} строк</span></div>
+            <div className="text-xs text-green-600">Филиалы: {result.branches.map(b => b).join(", ")}</div>
+            <button className="text-xs text-blue-600 underline mt-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Загрузить другой файл</button>
+          </div>
+        )}
+        {state === "error" && <div className="flex items-center justify-center gap-2 text-sm text-red-600"><XCircle size={15} />{msg} <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Повторить</button></div>}
+        {state === "idle" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Upload size={14} />{isDragActive ? "Отпустите файл" : "Перетащите или нажмите — загрузить отчёт продаж .xlsx"}</div>}
+      </div>
+
+      {/* DB Diagnostics */}
+      {stats && stats.total_rows > 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              В базе за {stats.period_date}: {stats.total_rows.toLocaleString("ru")} строк
+            </div>
+            <button onClick={handleClear} disabled={clearMut.isPending}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50">
+              {clearMut.isPending ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+              Очистить данные
+            </button>
+          </div>
+
+          {/* Sales branches */}
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Продажи по филиалам</div>
+            {salesBranches.length === 0
+              ? <div className="text-xs text-red-500">⚠ Нет данных по продажам — загрузите файл</div>
+              : <div className="flex flex-wrap gap-1.5">
+                {salesBranches.map(b => (
+                  <div key={b.branch_code} className="flex items-center gap-1 bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                    <span className="text-[10px] font-semibold text-blue-700">{b.branch_name}</span>
+                    <span className="text-[9px] text-blue-400">{b.rows} стр</span>
+                  </div>
+                ))}
+              </div>
+            }
+          </div>
+
+          {/* Categories */}
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Категории ({stats.by_cat1.length})</div>
+            {stats.by_cat1.length === 0
+              ? <div className="text-xs text-red-500">⚠ Нет категорий — загрузите файл повторно</div>
+              : <div className="flex flex-wrap gap-1.5">
+                {stats.by_cat1.slice(0, 15).map(c => (
+                  <div key={c.cat1} className="flex items-center gap-1 bg-indigo-50 border border-indigo-100 rounded px-2 py-1">
+                    <span className="text-[10px] font-semibold text-indigo-700">{c.cat1}</span>
+                    <span className="text-[9px] text-indigo-400">{c.rows} стр</span>
+                  </div>
+                ))}
+                {stats.by_cat1.length > 15 && <span className="text-[10px] text-gray-400">+{stats.by_cat1.length - 15} ещё</span>}
+              </div>
+            }
+          </div>
+
+          {/* Bonus branches */}
+          {bonusBranches.length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Бонусы по филиалам</div>
+              <div className="flex flex-wrap gap-1.5">
+                {bonusBranches.map(b => (
+                  <div key={b.branch_code} className="flex items-center gap-1 bg-amber-50 border border-amber-100 rounded px-2 py-1">
+                    <span className="text-[10px] font-semibold text-amber-700">{b.branch_name}</span>
+                    <span className="text-[9px] text-amber-400">{b.rows} стр</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {stats && stats.total_rows === 0 && selectedDate && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm text-orange-700">
+          ⚠ В базе нет данных за {selectedDate}. Загрузите Excel-файл отчёта продаж.
+        </div>
+      )}
     </div>
   );
 }
@@ -719,7 +819,7 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {showUpload && <UploadBlock onDone={() => setShowUpload(false)} />}
+      {showUpload && <UploadBlock onDone={() => setShowUpload(false)} selectedDate={selectedDate} />}
 
       {/* KPI strip */}
       {!isEmpty && (

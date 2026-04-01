@@ -469,6 +469,36 @@ export const useSalesReportTotals = (params: {
     enabled: true,
   });
 
+export interface SalesReportStats {
+  period_date: string | null;
+  total_rows: number;
+  by_branch: { branch_code: string; branch_name: string; is_bonus: boolean; rows: number; amount: number }[];
+  by_cat1: { cat1: string; rows: number; amount: number }[];
+}
+
+export const useSalesReportStats = (period_date?: string) =>
+  useQuery<SalesReportStats>({
+    queryKey: ["sales-report-stats", period_date],
+    queryFn: () => api.get("/api/sales-report/stats", { params: { period_date } }).then(r => r.data),
+    enabled: true,
+  });
+
+export const useClearSalesReport = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; deleted: number }, Error, string>({
+    mutationFn: (period_date) =>
+      api.delete("/api/sales-report/clear", { params: { period_date } }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-report-dates"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-summary"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-rows"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-totals"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-branches"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-stats"] });
+    },
+  });
+};
+
 export const useUploadSalesReport = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean; rows: number; branches: string[] }, Error, File>({
