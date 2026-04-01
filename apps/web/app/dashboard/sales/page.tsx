@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Upload, CheckCircle, XCircle, Loader2,
-  ChevronRight, ChevronDown, X, Package,
+  ChevronRight, ChevronDown, X,
   Search, Building2, Tag, ShoppingBag, BarChart2,
 } from "lucide-react";
 
@@ -291,25 +291,25 @@ function PieTip({ active, payload }: { active?: boolean; payload?: { name: strin
 }
 
 // ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
-function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal }: {
-  tree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
+function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal }: {
+  salesTree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
 }) {
   const branchData = useMemo(() =>
-    [...totals].sort((a, b) => b.amount - a.amount).map((t, i) => ({
+    [...totals].sort((a, b) => b.amount - a.amount).map((t) => ({
       name: t.branch_name, amount: t.amount, qty: t.qty,
       share: grandTotal > 0 ? (t.amount / grandTotal * 100).toFixed(1) : "0",
     })),
     [totals, grandTotal]);
 
   const catData = useMemo(() => {
-    const top = tree.slice(0, 8).map(n => ({
+    const top = salesTree.slice(0, 8).map(n => ({
       name: n.label.length > 14 ? n.label.slice(0, 14) + "…" : n.label,
       value: n.total.amount,
     }));
-    const rest = tree.slice(8).reduce((s, n) => s + n.total.amount, 0);
+    const rest = salesTree.slice(8).reduce((s, n) => s + n.total.amount, 0);
     if (rest > 0) top.push({ name: "Прочее", value: rest });
     return top;
-  }, [tree]);
+  }, [salesTree]);
 
   return (
     <div className="space-y-4">
@@ -354,29 +354,28 @@ function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal, realisati
         </div>
       </div>
 
-      {/* Comparison strip */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Bonus vs Sales summary bar */}
+      {realisationTotal > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Реализация (факт)</div>
-          <div className="text-xl font-black text-blue-600">{fmt(realisationTotal)}</div>
-          <div className="mt-2 h-2 bg-blue-100 rounded-full"><div className="h-full bg-blue-500 rounded-full w-full" /></div>
-          <div className="text-[10px] text-gray-400 mt-1">платные продажи</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Бонусы (бесплатно)</div>
-          <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
-          <div className="mt-2 h-2 bg-amber-100 rounded-full">
-            <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: realisationTotal > 0 ? `${Math.min(bonusTotal / realisationTotal * 100, 100)}%` : "100%" }} />
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Соотношение продажи / бонусы</div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-500" />
+              <span className="text-xs text-gray-700">Продажи <span className="font-bold">{fmt(realisationTotal)}</span></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className="text-xs text-gray-700">Бонусы <span className="font-bold text-amber-600">{fmt(bonusTotal)}</span>
+                <span className="text-gray-400 ml-1">({(bonusTotal / (realisationTotal + bonusTotal) * 100).toFixed(1)}%)</span>
+              </span>
+            </div>
           </div>
-          <div className="text-[10px] text-gray-400 mt-1">{realisationTotal > 0 ? (bonusTotal / realisationTotal * 100).toFixed(1) : "—"}% от реализации</div>
+          <div className="mt-3 flex h-3 rounded-full overflow-hidden bg-gray-100">
+            <div className="bg-blue-500 h-full transition-all" style={{ width: `${realisationTotal / (realisationTotal + bonusTotal) * 100}%` }} />
+            <div className="bg-amber-400 h-full transition-all flex-1" />
+          </div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">ТМЗ — остатки склада</div>
-          <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
-          <div className="mt-2 h-2 bg-emerald-100 rounded-full"><div className="h-full bg-emerald-500 rounded-full w-full" /></div>
-          <div className="text-[10px] text-gray-400 mt-1">текущий остаток</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -516,14 +515,18 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
 }
 
 // ── TAB 3: Категории ──────────────────────────────────────────────────────────
-function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onProductClick }: {
-  tree: PivotNode[]; branches: { code: string; name: string }[];
+function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonusRows, onProductClick }: {
+  tree: PivotNode[]; bonusTree: PivotNode[]; branches: { code: string; name: string }[];
   branchTotals: Record<string, Cell>; allRows: SalesReportRow[];
   bonusRows: SalesReportRow[]; onProductClick: (r: SalesReportRow) => void;
 }) {
   const [open, setOpen] = useState(new Set<string>());
   const [openLeaf, setOpenLeaf] = useState(new Set<string>());
   const [openBranch, setOpenBranch] = useState(new Set<string>());
+  const [bonusSectionOpen, setBonusSectionOpen] = useState(false);
+  const [bonusOpen, setBonusOpen] = useState(new Set<string>());
+  const [bonusLeaf, setBonusLeaf] = useState(new Set<string>());
+  const [bonusBranch, setBonusBranch] = useState(new Set<string>());
   const [filterBranch, setFilterBranch] = useState("");
   const [filterCat1, setFilterCat1] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
@@ -663,7 +666,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
         </div>
       )}
 
-    {!filterSearch.trim() && (
+    {!filterSearch.trim() && (<>
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       {/* Grand total header */}
       <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-4 flex-wrap">
@@ -813,7 +816,182 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onPro
         );
       })}
     </div>
-    )}
+
+    {/* ── БОНУСЫ section ──────────────────────────────────────────────────── */}
+    {bonusTree.length > 0 && (() => {
+      const bonusGrandAmt = bonusTree.reduce((s, n) => s + n.total.amount, 0);
+      const bonusGrandQty = bonusTree.reduce((s, n) => s + n.total.qty, 0);
+      const tog2 = (s: Set<string>, id: string) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; };
+
+      function flattenBonus(nodes: PivotNode[], out: PivotNode[] = []) {
+        for (const n of nodes) {
+          out.push(n);
+          if (bonusOpen.has(n.id) && n.children.length) flattenBonus(n.children, out);
+        }
+        return out;
+      }
+      const bonusVisible = bonusSectionOpen ? flattenBonus(bonusTree) : [];
+
+      function getBonusCell(row: PivotNode): Cell {
+        return filterBranch ? (row.byBranch[filterBranch] ?? { qty: 0, amount: 0 }) : row.total;
+      }
+
+      function getBonusProducts(node: PivotNode) {
+        const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
+        for (const r of bonusRows) {
+          if (r.cat1 !== node.cat1) continue;
+          if (node.cat2 !== null && r.cat2 !== node.cat2) continue;
+          if (node.cat3 !== null && r.cat3 !== node.cat3) continue;
+          const k = r.code || r.name;
+          if (!map.has(k)) map.set(k, { ...r, _qty: 0, _amt: 0 });
+          const g = map.get(k)!; g._qty += r.qty; g._amt += r.amount;
+        }
+        return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.amount - a.amount);
+      }
+
+      return (
+        <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
+          {/* Bonus header */}
+          <button
+            className="w-full bg-amber-50 hover:bg-amber-100 transition-colors border-b border-amber-200 px-4 py-3 flex items-center gap-4 flex-wrap"
+            onClick={() => setBonusSectionOpen(v => !v)}>
+            <span className="flex-shrink-0 text-amber-500">
+              {bonusSectionOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            </span>
+            <span className="text-sm font-bold text-amber-800 flex-1 text-left">Бонусы</span>
+            <div className="text-right">
+              <div className="text-base font-black text-amber-700 tabular-nums">{fmt(bonusGrandAmt)}</div>
+              <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusGrandQty)}</div>
+            </div>
+            <div className="w-40">
+              <DistBar byBranch={bonusTree.reduce((acc, n) => {
+                for (const [k, v] of Object.entries(n.byBranch)) {
+                  if (!acc[k]) acc[k] = { qty: 0, amount: 0 };
+                  acc[k].qty += v.qty; acc[k].amount += v.amount;
+                }
+                return acc;
+              }, {} as Record<string, Cell>)} total={bonusGrandAmt} />
+            </div>
+          </button>
+
+          {/* Column headers */}
+          {bonusSectionOpen && (
+            <div className="grid gap-0 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
+              style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+              <div>Категория</div>
+              <div className="text-right">{filterBranch ? branches.find(b => b.code === filterBranch)?.name : "Итого"}</div>
+              <div className="text-right">Кол-во</div>
+              <div className="pl-3">Распределение</div>
+            </div>
+          )}
+
+          {/* Bonus rows */}
+          {bonusVisible.map(row => {
+            const hasKids = row.children.length > 0;
+            const isOpen2 = bonusOpen.has(row.id);
+            const isLeafOpen2 = bonusLeaf.has(row.id);
+            const isBranchOpen2 = bonusBranch.has(row.id);
+            const pl = row.level * 20 + 16;
+            const products = (!hasKids && isLeafOpen2) ? getBonusProducts(row) : [];
+
+            return (
+              <div key={row.id} className={row.level === 0 ? "border-t-2 border-amber-50" : ""}>
+                <div className={cn("grid items-center border-b border-gray-50 hover:bg-amber-50/40 group",
+                  row.level === 1 ? "bg-gray-50/30" : "bg-white")}
+                  style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+                  <button className="flex items-center gap-1.5 py-2.5 text-left min-w-0"
+                    style={{ paddingLeft: pl, paddingRight: 8 }}
+                    onClick={() => hasKids ? setBonusOpen(s => tog2(s, row.id)) : setBonusLeaf(s => tog2(s, row.id))}>
+                    <span className="flex-shrink-0 text-amber-400">
+                      {hasKids
+                        ? (isOpen2 ? <ChevronDown size={13} /> : <ChevronRight size={13} />)
+                        : (isLeafOpen2 ? <ChevronDown size={12} className="text-amber-400" /> : <ChevronRight size={12} className="text-amber-200" />)}
+                    </span>
+                    <span className={cn("truncate", row.level === 0 ? "text-sm font-bold text-gray-900" : row.level === 1 ? "text-xs font-semibold text-gray-700" : "text-xs text-gray-600")}>
+                      {row.label}
+                    </span>
+                  </button>
+                  <div className="text-right pr-4 py-2.5">
+                    <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(getBonusCell(row).amount)}</div>
+                    {row.level === 0 && bonusGrandAmt > 0 && (
+                      <div className="text-[9px] text-gray-400">{(getBonusCell(row).amount / bonusGrandAmt * 100).toFixed(1)}%</div>
+                    )}
+                  </div>
+                  <div className="text-right pr-4 py-2.5">
+                    <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(getBonusCell(row).qty)}</div>
+                  </div>
+                  <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
+                    onClick={() => setBonusBranch(s => tog2(s, row.id))}>
+                    <div className="flex-1 min-w-0">
+                      <DistBar byBranch={row.byBranch} total={row.total.amount} />
+                    </div>
+                    <span className={cn("flex-shrink-0 transition-colors", isBranchOpen2 ? "text-amber-400" : "text-gray-200 group-hover/bar:text-gray-400")}>
+                      {isBranchOpen2 ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Branch detail panel */}
+                {isBranchOpen2 && (
+                  <div className="border-b border-amber-100 bg-amber-50/40 px-4 py-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                      {branches.map((b, bi) => {
+                        const c = row.byBranch[b.code];
+                        if (!c || c.amount === 0) return null;
+                        const pct = row.total.amount > 0 ? c.amount / row.total.amount * 100 : 0;
+                        return (
+                          <div key={b.code} className="flex items-start gap-2 bg-white rounded-lg px-2.5 py-2 border border-amber-100 shadow-sm">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: C[bi % C.length] }} />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[10px] text-gray-500 font-medium truncate">{b.name}</div>
+                              <div className="text-[11px] font-bold text-gray-900 tabular-nums">{fmt(c.amount)}</div>
+                              <div className="text-[9px] text-gray-400 tabular-nums">{fmtQ(c.qty)} · {pct.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Leaf products */}
+                {!hasKids && isLeafOpen2 && products.map((p, pi) => {
+                  const perBranch: Record<string, { qty: number; amount: number }> = {};
+                  for (const r of bonusRows) {
+                    if (r.code !== p.code) continue;
+                    if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
+                    perBranch[r.branch_code].qty += r.qty; perBranch[r.branch_code].amount += r.amount;
+                  }
+                  return (
+                    <div key={`bonus_${row.id}_${p.code}_${pi}`}
+                      className={cn("grid items-center border-b border-gray-50 hover:bg-amber-50/30", pi % 2 === 0 ? "bg-white" : "bg-amber-50/10")}
+                      style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+                      <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
+                        <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-200 group-hover/p:bg-amber-500 flex-shrink-0" />
+                          <span className="text-[11px] text-gray-600 group-hover/p:text-amber-700 truncate">{p.name}</span>
+                          <span className="text-[9px] text-amber-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
+                        </button>
+                      </div>
+                      <div className="text-right pr-4 py-1.5">
+                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
+                      </div>
+                      <div className="text-right pr-4 py-1.5">
+                        <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                      </div>
+                      <div className="pl-3 pr-3 py-1.5">
+                        <DistBar byBranch={perBranch} total={p.amount} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      );
+    })()}
+    </>)}
     </div>
   );
 }
@@ -957,7 +1135,11 @@ export default function SalesPage() {
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
 
-  // Combined tree: regular + bonus categories (ВАРЕНЬЕ, МАСЛО, ЧАЙ etc.)
+  // Paid-only tree (for Categories tab)
+  const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
+  // Bonus-only tree (for Бонусы section in Categories)
+  const bonusTree = useMemo(() => buildPivotTree(bonusSummary), [bonusSummary]);
+  // Combined tree: regular + bonus categories (for Обзор / Филиалы / Продукты)
   const tree = useMemo(() => buildPivotTree([...summary, ...bonusSummary]), [summary, bonusSummary]);
 
   // Combined branch totals (all 9 branches)
@@ -982,8 +1164,8 @@ export default function SalesPage() {
   const grandTotal = totals.reduce((s, t) => s + t.amount, 0);  // реализация (non-bonus)
   const grandQty = totals.reduce((s, t) => s + t.qty, 0);
   const bonusTotal = bonusSummary.reduce((s, r) => s + r.amount, 0);
+  const bonusGrandQty = bonusSummary.reduce((s, r) => s + r.qty, 0);
   const combinedGrandTotal = combinedTotals.reduce((s, t) => s + t.amount, 0);
-  const combinedGrandQty = combinedTotals.reduce((s, t) => s + t.qty, 0);
   const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
   const isEmpty = !isLoading && summary.length === 0 && bonusSummary.length === 0;
 
@@ -1015,18 +1197,18 @@ export default function SalesPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
-            <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
-            <div className="text-[11px] text-blue-200">{fmtQ(combinedGrandQty)}</div>
+            <div className="text-xl font-black">{fmt(grandTotal)}</div>
+            <div className="text-[11px] text-blue-200">{fmtQ(grandQty)}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
+            <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
+            <div className="text-[11px] text-gray-400">{fmtQ(bonusGrandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
-            <div className="text-xl font-black text-gray-900">{tree.length}</div>
+            <div className="text-xl font-black text-gray-900">{salesTree.length}</div>
             <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Платные продажи</div>
-            <div className="text-xl font-black text-indigo-600">{fmt(grandTotal)}</div>
-            <div className="text-[11px] text-gray-400">{fmtQ(grandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
@@ -1065,11 +1247,11 @@ export default function SalesPage() {
           </div>
         </div>
       ) : activeTab === "overview" ? (
-        <OverviewTab tree={tree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} />
+        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} />
       ) : activeTab === "branches" ? (
-        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={tree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
+        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
       ) : activeTab === "categories" ? (
-        <CategoriesTab tree={tree} branches={orderedBranches} branchTotals={branchTotals}
+        <CategoriesTab tree={salesTree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
       ) : (
         <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct} />
