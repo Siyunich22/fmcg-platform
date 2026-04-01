@@ -291,8 +291,8 @@ function PieTip({ active, payload }: { active?: boolean; payload?: { name: strin
 }
 
 // ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
-function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal }: {
-  tree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number;
+function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal }: {
+  tree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
 }) {
   const branchData = useMemo(() =>
     [...totals].sort((a, b) => b.amount - a.amount).map((t, i) => ({
@@ -358,17 +358,17 @@ function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal }: {
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Реализация (факт)</div>
-          <div className="text-xl font-black text-blue-600">{fmt(grandTotal)}</div>
+          <div className="text-xl font-black text-blue-600">{fmt(realisationTotal)}</div>
           <div className="mt-2 h-2 bg-blue-100 rounded-full"><div className="h-full bg-blue-500 rounded-full w-full" /></div>
-          <div className="text-[10px] text-gray-400 mt-1">100% базис</div>
+          <div className="text-[10px] text-gray-400 mt-1">платные продажи</div>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Бонусы (бесплатно)</div>
           <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
           <div className="mt-2 h-2 bg-amber-100 rounded-full">
-            <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: grandTotal > 0 ? `${Math.min(bonusTotal / grandTotal * 100, 100)}%` : "0%" }} />
+            <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: realisationTotal > 0 ? `${Math.min(bonusTotal / realisationTotal * 100, 100)}%` : "100%" }} />
           </div>
-          <div className="text-[10px] text-gray-400 mt-1">{grandTotal > 0 ? (bonusTotal / grandTotal * 100).toFixed(1) : 0}% от реализации</div>
+          <div className="text-[10px] text-gray-400 mt-1">{realisationTotal > 0 ? (bonusTotal / realisationTotal * 100).toFixed(1) : "—"}% от реализации</div>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">ТМЗ — остатки склада</div>
@@ -480,8 +480,8 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
 
   function getLeafProducts(node: PivotNode) {
     const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
-    for (const r of allRows) {
-      if (r.is_bonus || r.cat1 !== node.cat1) continue;
+    for (const r of [...allRows, ...bonusRows]) {
+      if (r.cat1 !== node.cat1) continue;
       if (node.cat2 !== null && r.cat2 !== node.cat2) continue;
       if (node.cat3 !== null && r.cat3 !== node.cat3) continue;
       const k = r.code || r.name;
@@ -658,8 +658,7 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
   const products = useMemo(() => {
     const sq = search.toLowerCase();
     const map = new Map<string, { row: SalesReportRow; amt: number; qty: number; branchCount: number }>();
-    for (const r of allRows) {
-      if (r.is_bonus) continue;
+    for (const r of [...allRows, ...bonusRows]) {
       if (cat1 && r.cat1 !== cat1) continue;
       if (branch && r.branch_code !== branch) continue;
       if (sq && !r.name.toLowerCase().includes(sq)) continue;
@@ -669,15 +668,14 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
     }
     // count unique branches per product
     const branchMap = new Map<string, Set<string>>();
-    for (const r of allRows) {
-      if (r.is_bonus) continue;
+    for (const r of [...allRows, ...bonusRows]) {
       const k = r.code || r.name;
       if (!branchMap.has(k)) branchMap.set(k, new Set());
       branchMap.get(k)!.add(r.branch_code);
     }
     for (const [k, g] of map) g.branchCount = branchMap.get(k)?.size ?? 0;
     return [...map.values()].sort((a, b) => b.amt - a.amt);
-  }, [allRows, search, cat1, branch]);
+  }, [allRows, bonusRows, search, cat1, branch]);
 
   const maxAmt = products[0]?.amt ?? 1;
   const hasFilter = !!(search || cat1 || branch);
@@ -782,21 +780,34 @@ export default function SalesPage() {
   const { data: bonusRows = [] } = useSalesReportRows({ ...p, is_bonus: true });
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
 
-  const tree = useMemo(() => buildPivotTree(summary), [summary]);
+  // Combined tree: regular + bonus categories (ВАРЕНЬЕ, МАСЛО, ЧАЙ etc.)
+  const tree = useMemo(() => buildPivotTree([...summary, ...bonusSummary]), [summary, bonusSummary]);
+
+  // Combined branch totals (all 9 branches)
+  const combinedTotals = useMemo(() => {
+    const m = new Map<string, SalesReportTotal>();
+    for (const r of [...summary, ...bonusSummary]) {
+      if (!m.has(r.branch_code)) m.set(r.branch_code, { branch_code: r.branch_code, branch_name: r.branch_name, qty: 0, amount: 0 });
+      const e = m.get(r.branch_code)!; e.qty += r.qty; e.amount += r.amount;
+    }
+    return [...m.values()];
+  }, [summary, bonusSummary]);
+
   const branchTotals = useMemo(() => {
     const m: Record<string, Cell> = {};
-    for (const t of totals) m[t.branch_code] = { qty: t.qty, amount: t.amount };
+    for (const t of combinedTotals) m[t.branch_code] = { qty: t.qty, amount: t.amount };
     return m;
-  }, [totals]);
+  }, [combinedTotals]);
   const orderedBranches = useMemo(() =>
     [...branchList].sort((a, b) => (branchTotals[b.code]?.amount ?? 0) - (branchTotals[a.code]?.amount ?? 0)),
     [branchList, branchTotals]);
 
-  const grandTotal = totals.reduce((s, t) => s + t.amount, 0);
+  const grandTotal = totals.reduce((s, t) => s + t.amount, 0);  // реализация (non-bonus)
   const grandQty = totals.reduce((s, t) => s + t.qty, 0);
   const bonusTotal = bonusSummary.reduce((s, r) => s + r.amount, 0);
+  const combinedGrandTotal = combinedTotals.reduce((s, t) => s + t.amount, 0);
   const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
-  const isEmpty = !isLoading && summary.length === 0;
+  const isEmpty = !isLoading && summary.length === 0 && bonusSummary.length === 0;
 
   return (
     <div className="space-y-4 max-w-[1600px]">
@@ -876,9 +887,9 @@ export default function SalesPage() {
           </div>
         </div>
       ) : activeTab === "overview" ? (
-        <OverviewTab tree={tree} totals={totals} grandTotal={grandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} />
+        <OverviewTab tree={tree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} />
       ) : activeTab === "branches" ? (
-        <BranchesTab totals={totals} grandTotal={grandTotal} tree={tree} tmzSummary={tmzSummary} />
+        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={tree} tmzSummary={tmzSummary} />
       ) : activeTab === "categories" ? (
         <CategoriesTab tree={tree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusSummary={bonusSummary} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
