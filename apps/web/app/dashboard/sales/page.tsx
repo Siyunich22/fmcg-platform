@@ -1207,7 +1207,7 @@ export default function SalesPage() {
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
-            <div className="text-xl font-black text-gray-900">{salesTree.length}</div>
+            <div className="text-xl font-black text-gray-900">{tree.length}</div>
             <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
@@ -1251,7 +1251,7 @@ export default function SalesPage() {
       ) : activeTab === "branches" ? (
         <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
       ) : activeTab === "categories" ? (
-        <CategoriesTab tree={salesTree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
+        <CategoriesTab tree={tree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
       ) : (
         <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct} />
