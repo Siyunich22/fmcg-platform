@@ -983,6 +983,7 @@ export default function SalesPage() {
   const grandQty = totals.reduce((s, t) => s + t.qty, 0);
   const bonusTotal = bonusSummary.reduce((s, r) => s + r.amount, 0);
   const combinedGrandTotal = combinedTotals.reduce((s, t) => s + t.amount, 0);
+  const combinedGrandQty = combinedTotals.reduce((s, t) => s + t.qty, 0);
   const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
   const isEmpty = !isLoading && summary.length === 0 && bonusSummary.length === 0;
 
@@ -1013,14 +1014,14 @@ export default function SalesPage() {
       {!isEmpty && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
-            <div className="text-xl font-black">{fmt(grandTotal)}</div>
-            <div className="text-[11px] text-blue-200">{fmtQ(grandQty)}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Отгрузки (всего)</div>
+            <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
+            <div className="text-[11px] text-blue-200">{fmtQ(combinedGrandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
             <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
-            <div className="text-[11px] text-gray-400">{grandTotal > 0 ? (bonusTotal / grandTotal * 100).toFixed(1) : 0}% от реализации</div>
+            <div className="text-[11px] text-gray-400">{combinedGrandTotal > 0 ? (bonusTotal / combinedGrandTotal * 100).toFixed(1) : 0}% от отгрузок</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
