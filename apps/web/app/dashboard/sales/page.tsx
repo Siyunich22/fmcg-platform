@@ -515,15 +515,15 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
   );
 }
 
-// ── TAB 3: Категории (pivot) ──────────────────────────────────────────────────
-function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bonusRows, onProductClick }: {
+// ── TAB 3: Категории ──────────────────────────────────────────────────────────
+function CategoriesTab({ tree, branches, branchTotals, allRows, bonusRows, onProductClick }: {
   tree: PivotNode[]; branches: { code: string; name: string }[];
   branchTotals: Record<string, Cell>; allRows: SalesReportRow[];
-  bonusSummary: SalesReportSummaryRow[]; bonusRows: SalesReportRow[];
-  onProductClick: (r: SalesReportRow) => void;
+  bonusRows: SalesReportRow[]; onProductClick: (r: SalesReportRow) => void;
 }) {
   const [open, setOpen] = useState(new Set<string>());
   const [openLeaf, setOpenLeaf] = useState(new Set<string>());
+  const [openBranch, setOpenBranch] = useState(new Set<string>());
   const tog = (s: Set<string>, id: string) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; };
 
   function flatten(nodes: PivotNode[], out: PivotNode[] = []) {
@@ -531,14 +531,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
     return out;
   }
   const visible = useMemo(() => flatten(tree), [tree, open]);
-
   const grand: Cell = { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
-  const bonusByBranch = useMemo(() => {
-    const m: Record<string, Cell> = {};
-    for (const r of bonusSummary) { if (!m[r.branch_code]) m[r.branch_code] = { qty: 0, amount: 0 }; m[r.branch_code].qty += r.qty; m[r.branch_code].amount += r.amount; }
-    return m;
-  }, [bonusSummary]);
-  const bonusTotals: Cell = { qty: bonusSummary.reduce((s, r) => s + r.qty, 0), amount: bonusSummary.reduce((s, r) => s + r.amount, 0) };
 
   function getLeafProducts(node: PivotNode) {
     const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
@@ -553,154 +546,162 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
     return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.amount - a.amount);
   }
 
-  const COL = 128; const LEFT = 220;
+  // Stacked distribution bar for a row
+  function DistBar({ byBranch, total }: { byBranch: Record<string, Cell>; total: number }) {
+    return (
+      <div className="flex h-3 rounded-full overflow-hidden bg-gray-100 w-full">
+        {branches.map((b, bi) => {
+          const c = byBranch[b.code];
+          const pct = total > 0 && c ? c.amount / total * 100 : 0;
+          if (pct < 0.8) return null;
+          return <div key={b.code} style={{ width: `${pct}%`, backgroundColor: C[bi % C.length] }} title={`${b.name}: ${fmt(c!.amount)} (${pct.toFixed(1)}%)`} />;
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table style={{ minWidth: LEFT + (branches.length + 1) * COL }}>
-          <colgroup>
-            <col style={{ width: LEFT, minWidth: LEFT }} />
-            <col style={{ width: COL }} />
-            {branches.map(b => <col key={b.code} style={{ width: COL }} />)}
-          </colgroup>
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Категория</th>
-              <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Итого</th>
-              {branches.map(b => <th key={b.code} className="px-3 py-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{b.name}</th>)}
-            </tr>
-            {/* Grand total */}
-            <tr className="bg-blue-600 text-white">
-              <td className="sticky left-0 z-10 bg-blue-600 px-3 py-2.5 text-sm font-bold">Все продажи</td>
-              <td className="px-3 py-2.5 text-center"><div className="text-sm font-black">{fmt(grand.amount)}</div><div className="text-[10px] text-blue-200">{fmtQ(grand.qty)}</div></td>
-              {branches.map(b => {
-                const c = branchTotals[b.code];
-                return (
-                  <td key={b.code} className="px-3 py-2.5 text-center">
-                    {c ? <><div className="text-sm font-bold">{fmt(c.amount)}</div><div className="text-[10px] text-blue-200">{grand.amount > 0 ? (c.amount / grand.amount * 100).toFixed(0) : 0}%</div></> : <span className="text-blue-300 text-xs">—</span>}
-                  </td>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map(row => {
-              const hasKids = row.children.length > 0;
-              const isOpen = open.has(row.id);
-              const isLeafOpen = openLeaf.has(row.id);
-              const pl = row.level * 20 + 12;
-              const products = (!hasKids && isLeafOpen) ? getLeafProducts(row) : [];
+      {/* Grand total header */}
+      <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-4 flex-wrap">
+        <span className="text-sm font-bold flex-1 min-w-0">Все продажи</span>
+        <div className="text-right">
+          <div className="text-base font-black tabular-nums">{fmt(grand.amount)}</div>
+          <div className="text-[10px] text-blue-200 tabular-nums">{fmtQ(grand.qty)}</div>
+        </div>
+        <div className="w-40">
+          <div className="flex h-2 rounded-full overflow-hidden bg-blue-500">
+            {branches.map((b, bi) => {
+              const c = branchTotals[b.code];
+              const pct = grand.amount > 0 && c ? c.amount / grand.amount * 100 : 0;
+              if (pct < 0.8) return null;
+              return <div key={b.code} style={{ width: `${pct}%`, backgroundColor: C[bi % C.length] }} title={`${b.name}: ${pct.toFixed(0)}%`} />;
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-2 mt-1">
+            {branches.slice(0, 5).map((b, bi) => {
+              const c = branchTotals[b.code];
+              if (!c || c.amount === 0) return null;
+              const pct = grand.amount > 0 ? c.amount / grand.amount * 100 : 0;
+              return <span key={b.code} className="text-[9px] text-blue-200" style={{ color: C[bi % C.length] }}>{b.name.slice(0, 4)} {pct.toFixed(0)}%</span>;
+            })}
+          </div>
+        </div>
+      </div>
 
-              return (
-                <>
-                  <tr key={row.id} className={cn("hover:bg-gray-50/60", row.level === 0 ? "border-t-2 border-gray-100" : "")}>
-                    <td className={cn("sticky left-0 z-10 border-b border-gray-100 p-0", row.level === 0 ? "bg-white" : row.level === 1 ? "bg-gray-50/80" : "bg-white")}>
-                      <button className="w-full text-left flex items-center gap-1.5 py-2.5" style={{ paddingLeft: pl, paddingRight: 12 }}
-                        onClick={() => hasKids ? setOpen(s => tog(s, row.id)) : setOpenLeaf(s => tog(s, row.id))}>
-                        <span className="flex-shrink-0 text-gray-400">
-                          {hasKids
-                            ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)
-                            : (isLeafOpen ? <ChevronDown size={12} className="text-blue-400" /> : <ChevronRight size={12} className="text-blue-200" />)}
-                        </span>
-                        <span className={cn("truncate", row.level === 0 ? "text-sm font-bold text-gray-900" : row.level === 1 ? "text-xs font-semibold text-gray-700" : "text-xs font-medium text-gray-600")}>
-                          {row.label}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
-                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(row.total.amount)}</div>
-                      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
-                    </td>
-                    {branches.map(b => {
-                      const c = row.byBranch[b.code];
-                      const pct = row.total.amount > 0 && c ? c.amount / row.total.amount * 100 : 0;
-                      return (
-                        <td key={b.code} className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
-                          {c && c.amount > 0 ? (
-                            <div className="space-y-1">
-                              <div className="text-xs font-semibold tabular-nums text-gray-800">{fmt(c.amount)}</div>
-                              <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(c.qty)}</div>
-                              <div className="flex items-center gap-1">
-                                <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
-                                </div>
-                                <span className="text-[9px] text-gray-400 w-6 text-right">{pct.toFixed(0)}%</span>
-                              </div>
-                            </div>
-                          ) : <span className="text-gray-200 text-xs">—</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
+      {/* Column headers */}
+      <div className="grid gap-0 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
+        style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+        <div>Категория</div>
+        <div className="text-right">Итого</div>
+        <div className="text-right">Кол-во</div>
+        <div className="pl-3">Распределение</div>
+      </div>
 
-                  {/* Leaf products */}
-                  {!hasKids && isLeafOpen && products.map((p, pi) => {
-                    const perBranch: Record<string, { qty: number; amount: number }> = {};
-                    for (const r of [...allRows, ...bonusRows]) {
-                      if (r.code !== p.code) continue;
-                      if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
-                      perBranch[r.branch_code].qty += r.qty;
-                      perBranch[r.branch_code].amount += r.amount;
-                    }
+      {/* Rows */}
+      {visible.map(row => {
+        const hasKids = row.children.length > 0;
+        const isOpen = open.has(row.id);
+        const isLeafOpen = openLeaf.has(row.id);
+        const isBranchOpen = openBranch.has(row.id);
+        const pl = row.level * 20 + 16;
+        const products = (!hasKids && isLeafOpen) ? getLeafProducts(row) : [];
+
+        return (
+          <div key={row.id} className={row.level === 0 ? "border-t-2 border-gray-100" : ""}>
+            {/* Main row */}
+            <div className={cn("grid items-center border-b border-gray-50 hover:bg-gray-50/60 group",
+              row.level === 1 ? "bg-gray-50/30" : "bg-white")}
+              style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+              <button className="flex items-center gap-1.5 py-2.5 text-left min-w-0"
+                style={{ paddingLeft: pl, paddingRight: 8 }}
+                onClick={() => hasKids ? setOpen(s => tog(s, row.id)) : setOpenLeaf(s => tog(s, row.id))}>
+                <span className="flex-shrink-0 text-gray-400">
+                  {hasKids
+                    ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)
+                    : (isLeafOpen ? <ChevronDown size={12} className="text-blue-400" /> : <ChevronRight size={12} className="text-blue-200" />)}
+                </span>
+                <span className={cn("truncate", row.level === 0 ? "text-sm font-bold text-gray-900" : row.level === 1 ? "text-xs font-semibold text-gray-700" : "text-xs text-gray-600")}>
+                  {row.label}
+                </span>
+              </button>
+              <div className="text-right pr-4 py-2.5">
+                <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(row.total.amount)}</div>
+                {row.level === 0 && grand.amount > 0 && (
+                  <div className="text-[9px] text-gray-400">{(row.total.amount / grand.amount * 100).toFixed(1)}%</div>
+                )}
+              </div>
+              <div className="text-right pr-4 py-2.5">
+                <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
+              </div>
+              <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
+                onClick={() => setOpenBranch(s => tog(s, row.id))}>
+                <div className="flex-1 min-w-0">
+                  <DistBar byBranch={row.byBranch} total={row.total.amount} />
+                </div>
+                <span className={cn("flex-shrink-0 transition-colors", isBranchOpen ? "text-blue-400" : "text-gray-200 group-hover/bar:text-gray-400")}>
+                  {isBranchOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </span>
+              </button>
+            </div>
+
+            {/* Branch detail panel */}
+            {isBranchOpen && (
+              <div className="border-b border-blue-100 bg-blue-50/40 px-4 py-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                  {branches.map((b, bi) => {
+                    const c = row.byBranch[b.code];
+                    if (!c || c.amount === 0) return null;
+                    const pct = row.total.amount > 0 ? c.amount / row.total.amount * 100 : 0;
                     return (
-                      <tr key={`${row.id}_${p.code}_${pi}`} className={cn("hover:bg-blue-50/40", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}>
-                        <td className="sticky left-0 z-10 bg-inherit border-b border-gray-50 py-1.5" style={{ paddingLeft: pl + 20, paddingRight: 12 }}>
-                          <button className="flex items-center gap-1.5 text-left group w-full" onClick={() => onProductClick(p)}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover:bg-blue-500 flex-shrink-0" />
-                            <span className="text-xs text-gray-600 group-hover:text-blue-700 truncate">{p.name}</span>
-                            <span className="text-[9px] text-blue-400 opacity-0 group-hover:opacity-100 flex-shrink-0">↗</span>
-                          </button>
-                        </td>
-                        <td className="px-3 py-1.5 text-center border-b border-gray-50">
-                          <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
-                          <div className="text-[10px] text-gray-400">{fmtQ(p.qty)}</div>
-                        </td>
-                        {branches.map(b => {
-                          const c = perBranch[b.code];
-                          return (
-                            <td key={b.code} className="px-3 py-1.5 text-center border-b border-gray-50">
-                              {c && c.amount > 0
-                                ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(c.amount)}</div><div className="text-[10px] text-gray-400">{fmtQ(c.qty)}</div></>
-                                : <span className="text-gray-200 text-[11px]">—</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                      <div key={b.code} className="flex items-start gap-2 bg-white rounded-lg px-2.5 py-2 border border-gray-100 shadow-sm">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: C[bi % C.length] }} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10px] text-gray-500 font-medium truncate">{b.name}</div>
+                          <div className="text-[11px] font-bold text-gray-900 tabular-nums">{fmt(c.amount)}</div>
+                          <div className="text-[9px] text-gray-400 tabular-nums">{fmtQ(c.qty)} · {pct.toFixed(1)}%</div>
+                        </div>
+                      </div>
                     );
                   })}
-                </>
+                </div>
+              </div>
+            )}
+
+            {/* Leaf products */}
+            {!hasKids && isLeafOpen && products.map((p, pi) => {
+              const perBranch: Record<string, { qty: number; amount: number }> = {};
+              for (const r of [...allRows, ...bonusRows]) {
+                if (r.code !== p.code) continue;
+                if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
+                perBranch[r.branch_code].qty += r.qty; perBranch[r.branch_code].amount += r.amount;
+              }
+              return (
+                <div key={`${row.id}_${p.code}_${pi}`}
+                  className={cn("grid items-center border-b border-gray-50 hover:bg-blue-50/30", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}
+                  style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+                  <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
+                    <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover/p:bg-blue-500 flex-shrink-0" />
+                      <span className="text-[11px] text-gray-600 group-hover/p:text-blue-700 truncate">{p.name}</span>
+                      <span className="text-[9px] text-blue-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
+                    </button>
+                  </div>
+                  <div className="text-right pr-4 py-1.5">
+                    <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
+                  </div>
+                  <div className="text-right pr-4 py-1.5">
+                    <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                  </div>
+                  <div className="pl-3 pr-3 py-1.5">
+                    <DistBar byBranch={perBranch} total={p.amount} />
+                  </div>
+                </div>
               );
             })}
-
-            {/* Bonuses */}
-            {bonusTotals.amount > 0 && (
-              <tr className="bg-amber-50/50 border-t-2 border-amber-100">
-                <td className="sticky left-0 z-10 bg-amber-50 border-b border-amber-100 px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-amber-700">БОНУСЫ</span>
-                    <span className="text-[10px] text-amber-500 bg-amber-100 rounded px-1.5 py-0.5">бесплатная отгрузка</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2.5 text-center border-b border-amber-100">
-                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmt(bonusTotals.amount)}</div>
-                  <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusTotals.qty)}</div>
-                </td>
-                {branches.map(b => {
-                  const c = bonusByBranch[b.code];
-                  return (
-                    <td key={b.code} className="px-3 py-2.5 text-center border-b border-amber-100">
-                      {c && c.amount > 0
-                        ? <><div className="text-xs font-bold text-amber-600 tabular-nums">{fmt(c.amount)}</div><div className="text-[10px] text-amber-400 tabular-nums">{fmtQ(c.qty)}</div></>
-                        : <span className="text-amber-200 text-xs">—</span>}
-                    </td>
-                  );
-                })}
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -956,7 +957,7 @@ export default function SalesPage() {
         <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={tree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
       ) : activeTab === "categories" ? (
         <CategoriesTab tree={tree} branches={orderedBranches} branchTotals={branchTotals}
-          allRows={allRows} bonusSummary={bonusSummary} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
+          allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
       ) : (
         <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct} />
       )}
