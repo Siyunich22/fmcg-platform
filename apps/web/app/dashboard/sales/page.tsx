@@ -1197,18 +1197,18 @@ export default function SalesPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
-            <div className="text-xl font-black">{fmt(grandTotal)}</div>
-            <div className="text-[11px] text-blue-200">{fmtQ(grandQty)}</div>
+            <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
+            <div className="text-[11px] text-blue-200">{fmtQ(grandQty + bonusGrandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
-            <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
-            <div className="text-[11px] text-gray-400">{fmtQ(bonusGrandQty)}</div>
+            <div className="text-xl font-black text-amber-600">{fmtQ(bonusGrandQty)}</div>
+            <div className="text-[11px] text-gray-400">{fmt(bonusTotal)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
-            <div className="text-xl font-black text-gray-900">{tree.length}</div>
-            <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Дебиторка</div>
+            <div className="text-xl font-black text-orange-600">{fmt(debtByBranch.reduce((s, r) => s + r.total_net, 0))}</div>
+            <div className="text-[11px] text-gray-400">{debtByBranch.length} филиалов</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
