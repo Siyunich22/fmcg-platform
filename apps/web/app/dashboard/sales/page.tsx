@@ -2,74 +2,42 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
+} from "recharts";
+import {
   useSalesReportDates, useSalesReportBranches, useSalesReportSummary,
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
   useTmzSummary,
-  type SalesReportRow, type SalesReportSummaryRow,
+  type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
+  type TmzSummaryRow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Upload, CheckCircle, XCircle, Loader2,
-  ChevronRight, ChevronDown, X, Package, BarChart2,
+  ChevronRight, ChevronDown, X, Package,
+  Search, Building2, Tag, ShoppingBag, BarChart2,
 } from "lucide-react";
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+const C = [
+  "#3b82f6","#6366f1","#8b5cf6","#ec4899","#f97316",
+  "#eab308","#22c55e","#06b6d4","#f43f5e","#a855f7",
+];
+
+type Tab = "overview" | "branches" | "categories" | "products";
+
 // ── Formatters ────────────────────────────────────────────────────────────────
-const ru = (n: number) =>
-  n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const ru = (n: number) => n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmt = (n: number) => ru(n) + " ₸";
 const fmtQ = (n: number) => ru(n) + " шт";
 const fmtM = (n: number) => {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "") + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
   return n.toFixed(0);
 };
 
-// ── Upload block ──────────────────────────────────────────────────────────────
-function UploadBlock({ onDone }: { onDone: () => void }) {
-  const upload = useUploadSalesReport();
-  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [msg, setMsg] = useState("");
-
-  const onDrop = useCallback(async (files: File[]) => {
-    if (!files.length) return;
-    setState("loading");
-    try {
-      const res = await upload.mutateAsync(files[0]);
-      setMsg(`${res.rows.toLocaleString("ru")} строк · ${res.branches.join(", ")}`);
-      setState("success");
-      onDone();
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : "Ошибка загрузки");
-      setState("error");
-    }
-  }, [upload, onDone]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, multiple: false, disabled: state === "loading",
-    accept: {
-      "application/vnd.ms-excel": [".xls"],
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-    },
-  });
-
-  return (
-    <div {...getRootProps()} className={cn(
-      "border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all",
-      isDragActive ? "border-blue-500 bg-blue-50"
-        : state === "success" ? "border-green-400 bg-green-50"
-        : state === "error" ? "border-red-300 bg-red-50"
-        : "border-gray-200 bg-white hover:border-blue-300"
-    )}>
-      <input {...getInputProps()} />
-      {state === "loading" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin text-blue-500" />Обрабатываем...</div>}
-      {state === "success" && <div className="flex items-center justify-center gap-2 text-sm text-green-700"><CheckCircle size={15} />Загружено: {msg}<button className="text-xs text-blue-600 underline ml-2" onClick={e => { e.stopPropagation(); setState("idle"); }}>Ещё</button></div>}
-      {state === "error" && <div className="flex items-center justify-center gap-2 text-sm text-red-600"><XCircle size={15} />{msg}<button className="text-xs text-blue-600 underline ml-2" onClick={e => { e.stopPropagation(); setState("idle"); }}>Повторить</button></div>}
-      {state === "idle" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Upload size={14} />{isDragActive ? "Отпустите" : "Загрузить отчёт продаж .xlsx"}</div>}
-    </div>
-  );
-}
-
-// ── Pivot tree ────────────────────────────────────────────────────────────────
+// ── Pivot tree types + builder ────────────────────────────────────────────────
 interface Cell { qty: number; amount: number; }
 interface PivotNode {
   id: string; label: string; level: 0 | 1 | 2;
@@ -79,21 +47,19 @@ interface PivotNode {
 }
 
 function buildPivotTree(rows: SalesReportSummaryRow[]): PivotNode[] {
-  const add = (cell: Cell, r: SalesReportSummaryRow) => { cell.qty += r.qty; cell.amount += r.amount; };
-  const ensure = (map: Record<string, Cell>, k: string) => { if (!map[k]) map[k] = { qty: 0, amount: 0 }; return map[k]; };
-
+  const add = (c: Cell, r: SalesReportSummaryRow) => { c.qty += r.qty; c.amount += r.amount; };
+  const ens = (m: Record<string, Cell>, k: string) => { if (!m[k]) m[k] = { qty: 0, amount: 0 }; return m[k]; };
   const m1 = new Map<string, { n: PivotNode; m2: Map<string, { n: PivotNode; m3: Map<string, PivotNode> }> }>();
   for (const r of rows) {
-    const c1 = r.cat1 ?? "Прочее";
-    const c2 = r.cat2; const c3 = r.cat3;
+    const c1 = r.cat1 ?? "Прочее", c2 = r.cat2, c3 = r.cat3;
     if (!m1.has(c1)) m1.set(c1, { n: { id: c1, label: c1, level: 0, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: null, cat3: null }, m2: new Map() });
-    const e1 = m1.get(c1)!; add(e1.n.total, r); add(ensure(e1.n.byBranch, r.branch_code), r);
+    const e1 = m1.get(c1)!; add(e1.n.total, r); add(ens(e1.n.byBranch, r.branch_code), r);
     const k2 = c2 ?? "__";
     if (!e1.m2.has(k2)) e1.m2.set(k2, { n: { id: `${c1}|${k2}`, label: c2 ?? "—", level: 1, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: c2 ?? null, cat3: null }, m3: new Map() });
-    const e2 = e1.m2.get(k2)!; add(e2.n.total, r); add(ensure(e2.n.byBranch, r.branch_code), r);
+    const e2 = e1.m2.get(k2)!; add(e2.n.total, r); add(ens(e2.n.byBranch, r.branch_code), r);
     if (c3) {
       if (!e2.m3.has(c3)) e2.m3.set(c3, { id: `${c1}|${k2}|${c3}`, label: c3, level: 2, total: { qty: 0, amount: 0 }, byBranch: {}, children: [], cat1: c1, cat2: c2 ?? null, cat3: c3 });
-      const n3 = e2.m3.get(c3)!; add(n3.total, r); add(ensure(n3.byBranch, r.branch_code), r);
+      const n3 = e2.m3.get(c3)!; add(n3.total, r); add(ens(n3.byBranch, r.branch_code), r);
     }
   }
   for (const [, e1] of m1) {
@@ -106,23 +72,52 @@ function buildPivotTree(rows: SalesReportSummaryRow[]): PivotNode[] {
   return [...m1.values()].map(e => e.n).sort((a, b) => b.total.amount - a.total.amount);
 }
 
-// ── Product detail modal ──────────────────────────────────────────────────────
+// ── Upload ────────────────────────────────────────────────────────────────────
+function UploadBlock({ onDone }: { onDone: () => void }) {
+  const upload = useUploadSalesReport();
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const onDrop = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setState("loading");
+    try {
+      const res = await upload.mutateAsync(files[0]);
+      setMsg(`${res.rows.toLocaleString("ru")} строк · ${res.branches.join(", ")}`);
+      setState("success"); onDone();
+    } catch (e: unknown) {
+      setMsg(e instanceof Error ? e.message : "Ошибка"); setState("error");
+    }
+  }, [upload, onDone]);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop, multiple: false, disabled: state === "loading",
+    accept: { "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+  });
+  return (
+    <div {...getRootProps()} className={cn("border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all",
+      isDragActive ? "border-blue-500 bg-blue-50" : state === "success" ? "border-green-400 bg-green-50"
+        : state === "error" ? "border-red-300 bg-red-50" : "border-gray-200 bg-white hover:border-blue-300")}>
+      <input {...getInputProps()} />
+      {state === "loading" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Loader2 size={15} className="animate-spin text-blue-500" />Обрабатываем...</div>}
+      {state === "success" && <div className="flex items-center justify-center gap-2 text-sm text-green-700"><CheckCircle size={15} />Загружено: {msg} <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Ещё</button></div>}
+      {state === "error" && <div className="flex items-center justify-center gap-2 text-sm text-red-600"><XCircle size={15} />{msg} <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>Повторить</button></div>}
+      {state === "idle" && <div className="flex items-center justify-center gap-2 text-sm text-gray-500"><Upload size={14} />{isDragActive ? "Отпустите" : "Загрузить отчёт продаж .xlsx"}</div>}
+    </div>
+  );
+}
+
+// ── Product modal ─────────────────────────────────────────────────────────────
 function ProductModal({ product, allRows, bonusRows, onClose }: {
   product: SalesReportRow; allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; onClose: () => void;
 }) {
-  const byBranch = useMemo(() =>
-    allRows.filter(r => r.code === product.code && !r.is_bonus).sort((a, b) => b.amount - a.amount),
-    [allRows, product.code]);
-  const bonuses = useMemo(() =>
-    bonusRows.filter(r => r.cat1 === product.cat1).sort((a, b) => b.qty - a.qty).slice(0, 25),
-    [bonusRows, product.cat1]);
-  const max = byBranch[0]?.amount ?? 1;
+  const byBranch = useMemo(() => allRows.filter(r => r.code === product.code && !r.is_bonus).sort((a, b) => b.amount - a.amount), [allRows, product.code]);
+  const bonuses = useMemo(() => bonusRows.filter(r => r.cat1 === product.cat1).sort((a, b) => b.qty - a.qty).slice(0, 20), [bonusRows, product.cat1]);
   const total = byBranch.reduce((s, r) => s + r.amount, 0);
   const qty = byBranch.reduce((s, r) => s + r.qty, 0);
+  const chartData = byBranch.map(r => ({ name: r.branch_name, amount: r.amount, qty: r.qty }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-start gap-3 flex-shrink-0">
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-mono text-gray-400">{product.code}</div>
@@ -137,39 +132,32 @@ function ProductModal({ product, allRows, bonusRows, onClose }: {
           <div><div className="text-[10px] text-gray-400 uppercase">Филиалов</div><div className="text-base font-black">{byBranch.length}</div></div>
         </div>
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-          <div>
-            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">По филиалам</div>
-            {byBranch.length === 0
-              ? <div className="text-sm text-gray-400 text-center py-3">Нет данных</div>
-              : <div className="space-y-2.5">{byBranch.map((r, i) => {
-                const pct = max > 0 ? (r.amount / max) * 100 : 0;
-                const share = total > 0 ? (r.amount / total * 100).toFixed(0) : "0";
-                return (
-                  <div key={r.branch_code}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-medium text-gray-700 w-20 flex-shrink-0">{r.branch_name}</span>
-                      <span className="text-[11px] text-gray-400">{fmtQ(r.qty)}</span>
-                      <span className="text-[11px] text-gray-400 ml-auto">{share}%</span>
-                      <span className="text-xs font-bold text-gray-800 w-28 text-right">{fmt(r.amount)}</span>
-                    </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={cn("h-full rounded-full", i === 0 ? "bg-blue-500" : i === 1 ? "bg-blue-400" : "bg-blue-300")} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}</div>}
-          </div>
+          {byBranch.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">По филиалам</div>
+              <ResponsiveContainer width="100%" height={Math.max(80, byBranch.length * 38)}>
+                <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                  <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={64} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(v: number) => [fmt(v), "Сумма"]} />
+                  <Bar dataKey="amount" radius={[0, 3, 3, 0]} maxBarSize={24}>
+                    {chartData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           {bonuses.length > 0 && (
             <div>
-              <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wide mb-2">Бонусы в «{product.cat1}»</div>
-              <div className="space-y-0.5">{bonuses.map(r => (
+              <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wide mb-2">Бонусы в категории «{product.cat1}»</div>
+              {bonuses.map(r => (
                 <div key={r.id} className="flex items-center gap-2 py-1 border-b border-amber-50">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-300 flex-shrink-0" />
                   <span className="text-xs text-gray-700 flex-1 truncate">{r.name}</span>
                   <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5">{r.branch_name}</span>
-                  <span className="text-[11px] font-mono text-gray-500 w-14 text-right">{fmtQ(r.qty)}</span>
+                  <span className="text-[11px] font-mono text-gray-500 w-12 text-right">{fmtQ(r.qty)}</span>
                 </div>
-              ))}</div>
+              ))}
             </div>
           )}
         </div>
@@ -178,278 +166,363 @@ function ProductModal({ product, allRows, bonusRows, onClose }: {
   );
 }
 
-// ── Cell ──────────────────────────────────────────────────────────────────────
-function PivotCell({ cell, rowTotal, colTotal, highlight }: {
-  cell: Cell | undefined; rowTotal: number; colTotal: number; highlight?: boolean;
+// ── Custom chart tooltips ─────────────────────────────────────────────────────
+function ChartTip({ active, payload }: { active?: boolean; payload?: { payload: { name: string; amount: number; qty?: number; share?: string }; value: number }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0];
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <div className="font-semibold text-gray-800 mb-1">{d.payload.name}</div>
+      <div className="text-blue-700 font-bold">{fmt(d.value)}</div>
+      {d.payload.qty != null && <div className="text-gray-500">{fmtQ(d.payload.qty)}</div>}
+      {d.payload.share != null && <div className="text-gray-400">{d.payload.share}% от итого</div>}
+    </div>
+  );
+}
+function PieTip({ active, payload }: { active?: boolean; payload?: { name: string; value: number; percent: number }[] }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <div className="font-semibold text-gray-800 mb-0.5">{payload[0].name}</div>
+      <div className="text-blue-700 font-bold">{fmt(payload[0].value)}</div>
+      <div className="text-gray-400">{(payload[0].percent * 100).toFixed(1)}%</div>
+    </div>
+  );
+}
+
+// ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
+function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal }: {
+  tree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number;
 }) {
-  if (!cell || cell.amount === 0) return <span className="text-gray-200 text-xs">—</span>;
-  const rowShare = rowTotal > 0 ? (cell.amount / rowTotal) * 100 : 0;
+  const branchData = useMemo(() =>
+    [...totals].sort((a, b) => b.amount - a.amount).map((t, i) => ({
+      name: t.branch_name, amount: t.amount, qty: t.qty,
+      share: grandTotal > 0 ? (t.amount / grandTotal * 100).toFixed(1) : "0",
+    })),
+    [totals, grandTotal]);
+
+  const catData = useMemo(() => {
+    const top = tree.slice(0, 8).map(n => ({
+      name: n.label.length > 14 ? n.label.slice(0, 14) + "…" : n.label,
+      value: n.total.amount,
+    }));
+    const rest = tree.slice(8).reduce((s, n) => s + n.total.amount, 0);
+    if (rest > 0) top.push({ name: "Прочее", value: rest });
+    return top;
+  }, [tree]);
 
   return (
-    <div className="space-y-1">
-      <div className={cn("text-xs font-bold tabular-nums", highlight ? "text-blue-700" : "text-gray-800")}>
-        {fmtM(cell.amount)} ₸
-      </div>
-      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(cell.qty)}</div>
-      <div className="flex items-center gap-1">
-        <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full", highlight ? "bg-blue-500" : "bg-blue-300")}
-            style={{ width: `${Math.min(rowShare, 100)}%` }}
-          />
+    <div className="space-y-4">
+      <div className="grid lg:grid-cols-5 gap-4">
+        {/* Branch bar chart */}
+        <div className="lg:col-span-3 bg-white border border-gray-200 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart2 size={14} className="text-blue-400" />
+            <span className="text-sm font-bold text-gray-800">Продажи по филиалам</span>
+          </div>
+          {branchData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={Math.max(160, branchData.length * 46)}>
+              <BarChart data={branchData} layout="vertical" margin={{ left: 0, right: 56, top: 4, bottom: 4 }}>
+                <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={76} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} />
+                <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={30}>
+                  {branchData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div className="h-40 flex items-center justify-center text-gray-300 text-sm">Нет данных</div>}
         </div>
-        <span className="text-[9px] text-gray-400 w-7 text-right tabular-nums">{rowShare.toFixed(0)}%</span>
+
+        {/* Category donut */}
+        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Tag size={14} className="text-indigo-400" />
+            <span className="text-sm font-bold text-gray-800">Доли категорий</span>
+          </div>
+          {catData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={catData} cx="50%" cy="42%" innerRadius={52} outerRadius={88} dataKey="value" paddingAngle={2}>
+                  {catData.map((_, i) => <Cell key={i} fill={C[i % C.length]} stroke="none" />)}
+                </Pie>
+                <Tooltip content={<PieTip />} />
+                <Legend formatter={v => <span style={{ fontSize: 10, color: "#374151" }}>{v}</span>} iconSize={8} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <div className="h-48 flex items-center justify-center text-gray-300 text-sm">Нет данных</div>}
+        </div>
+      </div>
+
+      {/* Comparison strip */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Реализация (факт)</div>
+          <div className="text-xl font-black text-blue-600">{fmt(grandTotal)}</div>
+          <div className="mt-2 h-2 bg-blue-100 rounded-full"><div className="h-full bg-blue-500 rounded-full w-full" /></div>
+          <div className="text-[10px] text-gray-400 mt-1">100% базис</div>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">Бонусы (бесплатно)</div>
+          <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
+          <div className="mt-2 h-2 bg-amber-100 rounded-full">
+            <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: grandTotal > 0 ? `${Math.min(bonusTotal / grandTotal * 100, 100)}%` : "0%" }} />
+          </div>
+          <div className="text-[10px] text-gray-400 mt-1">{grandTotal > 0 ? (bonusTotal / grandTotal * 100).toFixed(1) : 0}% от реализации</div>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">ТМЗ — остатки склада</div>
+          <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
+          <div className="mt-2 h-2 bg-emerald-100 rounded-full"><div className="h-full bg-emerald-500 rounded-full w-full" /></div>
+          <div className="text-[10px] text-gray-400 mt-1">текущий остаток</div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Pivot table ───────────────────────────────────────────────────────────────
-interface BranchInfo { code: string; name: string; }
+// ── TAB 2: Филиалы ────────────────────────────────────────────────────────────
+function BranchesTab({ totals, grandTotal, tree, tmzSummary }: {
+  totals: SalesReportTotal[]; grandTotal: number; tree: PivotNode[]; tmzSummary: TmzSummaryRow[];
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const sorted = useMemo(() => [...totals].sort((a, b) => b.amount - a.amount), [totals]);
+  const tmzByCode = useMemo(() => Object.fromEntries(tmzSummary.map(r => [r.branch_code, r])), [tmzSummary]);
 
-function PivotTable({
-  tree, branches, branchTotals, allRows, bonusRows,
-  bonusSummary, onProductClick,
-}: {
-  tree: PivotNode[];
-  branches: BranchInfo[];
-  branchTotals: Record<string, Cell>;
-  allRows: SalesReportRow[];
-  bonusRows: SalesReportRow[];
-  bonusSummary: SalesReportSummaryRow[];
+  const catChartData = useMemo(() => {
+    if (!selected) return [];
+    return tree
+      .map(n => ({ name: n.label.length > 16 ? n.label.slice(0, 16) + "…" : n.label, amount: n.byBranch[selected]?.amount ?? 0, qty: n.byBranch[selected]?.qty ?? 0 }))
+      .filter(x => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+  }, [selected, tree]);
+
+  const selBranch = sorted.find(t => t.branch_code === selected);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        {sorted.map((t, i) => {
+          const share = grandTotal > 0 ? t.amount / grandTotal * 100 : 0;
+          const tmz = tmzByCode[t.branch_code];
+          const isSel = selected === t.branch_code;
+          return (
+            <button key={t.branch_code} onClick={() => setSelected(isSel ? null : t.branch_code)}
+              className={cn("text-left p-4 rounded-xl border-2 transition-all hover:shadow-md",
+                isSel ? "border-blue-500 bg-blue-50 shadow-md" : "border-gray-200 bg-white hover:border-gray-300")}>
+              <div className="flex items-start justify-between mb-2">
+                <span className={cn("text-xs font-bold truncate", isSel ? "text-blue-700" : "text-gray-700")}>{t.branch_name}</span>
+                <span className="text-[10px] font-mono text-gray-400 ml-1 flex-shrink-0">#{i + 1}</span>
+              </div>
+              <div className={cn("text-lg font-black tabular-nums", isSel ? "text-blue-900" : "text-gray-900")}>{fmtM(t.amount)} ₸</div>
+              <div className="text-[11px] text-gray-400 tabular-nums">{fmtQ(t.qty)}</div>
+              <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: C[i % C.length] }} />
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[10px] text-gray-400">{share.toFixed(1)}%</span>
+                {tmz && <span className="text-[10px] text-emerald-600">{fmtM(tmz.total_amount)} ₸ TMZ</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {selected && catChartData.length > 0 && (
+        <div className="bg-white border border-blue-100 rounded-xl p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <Building2 size={16} className="text-blue-500" />
+            <span className="text-sm font-bold text-gray-800">{selBranch?.branch_name} — продажи по категориям</span>
+            <div className="text-sm font-black text-blue-700 ml-2">{selBranch ? fmt(selBranch.amount) : ""}</div>
+            <button onClick={() => setSelected(null)} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
+          </div>
+          <ResponsiveContainer width="100%" height={Math.max(100, catChartData.length * 44)}>
+            <BarChart data={catChartData} layout="vertical" margin={{ left: 0, right: 60, top: 4, bottom: 4 }}>
+              <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={120} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTip />} />
+              <Bar dataKey="amount" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                {catChartData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TAB 3: Категории (pivot) ──────────────────────────────────────────────────
+function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bonusRows, onProductClick }: {
+  tree: PivotNode[]; branches: { code: string; name: string }[];
+  branchTotals: Record<string, Cell>; allRows: SalesReportRow[];
+  bonusSummary: SalesReportSummaryRow[]; bonusRows: SalesReportRow[];
   onProductClick: (r: SalesReportRow) => void;
 }) {
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const toggle = (id: string) => setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [open, setOpen] = useState(new Set<string>());
+  const [openLeaf, setOpenLeaf] = useState(new Set<string>());
+  const tog = (s: Set<string>, id: string) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; };
 
-  // Flatten visible rows
   function flatten(nodes: PivotNode[], out: PivotNode[] = []) {
-    for (const n of nodes) {
-      out.push(n);
-      if (open.has(n.id) && n.children.length) flatten(n.children, out);
-    }
+    for (const n of nodes) { out.push(n); if (open.has(n.id) && n.children.length) flatten(n.children, out); }
     return out;
   }
-  const visibleRows = useMemo(() => flatten(tree), [tree, open]);
+  const visible = useMemo(() => flatten(tree), [tree, open]);
 
-  const grandTotal: Cell = useMemo(() => ({
-    qty: tree.reduce((s, n) => s + n.total.qty, 0),
-    amount: tree.reduce((s, n) => s + n.total.amount, 0),
-  }), [tree]);
-
-  // Bonus totals
-  const bonusTotal = useMemo(() => ({
-    qty: bonusSummary.reduce((s, r) => s + r.qty, 0),
-    amount: bonusSummary.reduce((s, r) => s + r.amount, 0),
-  }), [bonusSummary]);
+  const grand: Cell = { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
   const bonusByBranch = useMemo(() => {
     const m: Record<string, Cell> = {};
-    for (const r of bonusSummary) {
-      if (!m[r.branch_code]) m[r.branch_code] = { qty: 0, amount: 0 };
-      m[r.branch_code].qty += r.qty;
-      m[r.branch_code].amount += r.amount;
-    }
+    for (const r of bonusSummary) { if (!m[r.branch_code]) m[r.branch_code] = { qty: 0, amount: 0 }; m[r.branch_code].qty += r.qty; m[r.branch_code].amount += r.amount; }
     return m;
   }, [bonusSummary]);
+  const bonusTotals: Cell = { qty: bonusSummary.reduce((s, r) => s + r.qty, 0), amount: bonusSummary.reduce((s, r) => s + r.amount, 0) };
 
-  const COL_W = 136;
-  const LEFT_W = 220;
-
-  // Products grouped by cat3 for expanded leaf display
-  const [openLeaf, setOpenLeaf] = useState<Set<string>>(new Set());
-  const toggleLeaf = (id: string) => setOpenLeaf(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  function getLeafProducts(node: PivotNode): SalesReportRow[] {
-    // Unique products by code, summed across branches
-    const map = new Map<string, SalesReportRow>();
+  function getLeafProducts(node: PivotNode) {
+    const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
     for (const r of allRows) {
-      if (r.cat1 !== node.cat1) continue;
+      if (r.is_bonus || r.cat1 !== node.cat1) continue;
       if (node.cat2 !== null && r.cat2 !== node.cat2) continue;
       if (node.cat3 !== null && r.cat3 !== node.cat3) continue;
-      if (!r.is_bonus) {
-        const key = r.code || r.name;
-        if (!map.has(key)) map.set(key, { ...r });
-        else {
-          const existing = map.get(key)!;
-          map.set(key, { ...existing, qty: existing.qty + r.qty, amount: existing.amount + r.amount });
-        }
-      }
+      const k = r.code || r.name;
+      if (!map.has(k)) map.set(k, { ...r, _qty: 0, _amt: 0 });
+      const g = map.get(k)!; g._qty += r.qty; g._amt += r.amount;
     }
-    return [...map.values()].sort((a, b) => b.amount - a.amount);
+    return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.amount - a.amount);
   }
 
-  const thCls = "px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200 bg-gray-50";
-  const tdCls = "px-3 py-2.5 text-center border-b border-gray-100 align-top";
+  const COL = 128; const LEFT = 220;
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
-        <table style={{ minWidth: LEFT_W + (branches.length + 1) * COL_W + "px" }}>
+        <table style={{ minWidth: LEFT + (branches.length + 1) * COL }}>
           <colgroup>
-            <col style={{ width: LEFT_W }} />
-            <col style={{ width: COL_W }} />
-            {branches.map(b => <col key={b.code} style={{ width: COL_W }} />)}
+            <col style={{ width: LEFT, minWidth: LEFT }} />
+            <col style={{ width: COL }} />
+            {branches.map(b => <col key={b.code} style={{ width: COL }} />)}
           </colgroup>
           <thead>
-            {/* Column headers */}
-            <tr>
-              <th className={cn(thCls, "text-left sticky left-0 z-10")} style={{ minWidth: LEFT_W }}>
-                Категория / Продукт
-              </th>
-              <th className={thCls}>Итого</th>
-              {branches.map(b => (
-                <th key={b.code} className={thCls}>
-                  <div>{b.name}</div>
-                </th>
-              ))}
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Категория</th>
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Итого</th>
+              {branches.map(b => <th key={b.code} className="px-3 py-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{b.name}</th>)}
             </tr>
-            {/* Grand total row */}
+            {/* Grand total */}
             <tr className="bg-blue-600 text-white">
-              <td className="px-3 py-2.5 text-sm font-bold sticky left-0 z-10 bg-blue-600" style={{ minWidth: LEFT_W }}>
-                Все продажи
-              </td>
-              <td className="px-3 py-2.5 text-center">
-                <div className="text-sm font-black text-white">{fmt(grandTotal.amount)}</div>
-                <div className="text-[11px] text-blue-200">{fmtQ(grandTotal.qty)}</div>
-              </td>
+              <td className="sticky left-0 z-10 bg-blue-600 px-3 py-2.5 text-sm font-bold">Все продажи</td>
+              <td className="px-3 py-2.5 text-center"><div className="text-sm font-black">{fmt(grand.amount)}</div><div className="text-[10px] text-blue-200">{fmtQ(grand.qty)}</div></td>
               {branches.map(b => {
                 const c = branchTotals[b.code];
-                const share = grandTotal.amount > 0 && c ? (c.amount / grandTotal.amount * 100).toFixed(0) : "0";
                 return (
                   <td key={b.code} className="px-3 py-2.5 text-center">
-                    {c ? (
-                      <>
-                        <div className="text-sm font-bold text-white">{fmtM(c.amount)} ₸</div>
-                        <div className="text-[10px] text-blue-200">{fmtQ(c.qty)}</div>
-                        <div className="text-[10px] text-blue-300 font-semibold">{share}%</div>
-                      </>
-                    ) : <span className="text-blue-300 text-xs">—</span>}
+                    {c ? <><div className="text-sm font-bold">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-blue-200">{grand.amount > 0 ? (c.amount / grand.amount * 100).toFixed(0) : 0}%</div></> : <span className="text-blue-300 text-xs">—</span>}
                   </td>
                 );
               })}
             </tr>
           </thead>
-
           <tbody>
-            {visibleRows.map(row => {
-              const hasChildren = row.children.length > 0;
+            {visible.map(row => {
+              const hasKids = row.children.length > 0;
               const isOpen = open.has(row.id);
               const isLeafOpen = openLeaf.has(row.id);
-              const indent = row.level * 20 + 12;
-              const products = (!hasChildren && isLeafOpen) ? getLeafProducts(row) : [];
+              const pl = row.level * 20 + 12;
+              const products = (!hasKids && isLeafOpen) ? getLeafProducts(row) : [];
 
               return (
                 <>
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      "hover:bg-gray-50/70 transition-colors",
-                      row.level === 0 ? "border-t-2 border-gray-200" : ""
-                    )}
-                  >
-                    {/* Category name cell */}
-                    <td
-                      className={cn(
-                        "px-0 py-0 sticky left-0 z-10 border-b border-gray-100",
-                        row.level === 0 ? "bg-white" : row.level === 1 ? "bg-gray-50/80" : "bg-white"
-                      )}
-                      style={{ minWidth: LEFT_W }}
-                    >
-                      <button
-                        className="w-full text-left flex items-center gap-1.5 py-2.5"
-                        style={{ paddingLeft: indent }}
-                        onClick={() => hasChildren ? toggle(row.id) : toggleLeaf(row.id)}
-                      >
+                  <tr key={row.id} className={cn("hover:bg-gray-50/60", row.level === 0 ? "border-t-2 border-gray-100" : "")}>
+                    <td className={cn("sticky left-0 z-10 border-b border-gray-100 p-0", row.level === 0 ? "bg-white" : row.level === 1 ? "bg-gray-50/80" : "bg-white")}>
+                      <button className="w-full text-left flex items-center gap-1.5 py-2.5" style={{ paddingLeft: pl, paddingRight: 12 }}
+                        onClick={() => hasKids ? setOpen(s => tog(s, row.id)) : setOpenLeaf(s => tog(s, row.id))}>
                         <span className="flex-shrink-0 text-gray-400">
-                          {hasChildren
+                          {hasKids
                             ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)
-                            : (isLeafOpen ? <ChevronDown size={12} className="text-blue-400" /> : <ChevronRight size={12} className="text-blue-300" />)
-                          }
+                            : (isLeafOpen ? <ChevronDown size={12} className="text-blue-400" /> : <ChevronRight size={12} className="text-blue-200" />)}
                         </span>
-                        <span className={cn(
-                          "truncate",
-                          row.level === 0 ? "text-sm font-bold text-gray-900" :
-                          row.level === 1 ? "text-xs font-semibold text-gray-700" :
-                          "text-xs font-medium text-gray-600"
-                        )}>
+                        <span className={cn("truncate", row.level === 0 ? "text-sm font-bold text-gray-900" : row.level === 1 ? "text-xs font-semibold text-gray-700" : "text-xs font-medium text-gray-600")}>
                           {row.label}
                         </span>
                       </button>
                     </td>
-
-                    {/* Total cell */}
-                    <td className={tdCls}>
-                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>
-                        {fmtM(row.total.amount)} ₸
-                      </div>
+                    <td className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
+                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmtM(row.total.amount)} ₸</div>
                       <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
                     </td>
-
-                    {/* Per-branch cells */}
-                    {branches.map(b => (
-                      <td key={b.code} className={tdCls}>
-                        <PivotCell
-                          cell={row.byBranch[b.code]}
-                          rowTotal={row.total.amount}
-                          colTotal={branchTotals[b.code]?.amount ?? 0}
-                        />
-                      </td>
-                    ))}
+                    {branches.map(b => {
+                      const c = row.byBranch[b.code];
+                      const pct = row.total.amount > 0 && c ? c.amount / row.total.amount * 100 : 0;
+                      return (
+                        <td key={b.code} className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
+                          {c && c.amount > 0 ? (
+                            <div className="space-y-1">
+                              <div className="text-xs font-semibold tabular-nums text-gray-800">{fmtM(c.amount)} ₸</div>
+                              <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(c.qty)}</div>
+                              <div className="flex items-center gap-1">
+                                <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-400 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
+                                </div>
+                                <span className="text-[9px] text-gray-400 w-6 text-right">{pct.toFixed(0)}%</span>
+                              </div>
+                            </div>
+                          ) : <span className="text-gray-200 text-xs">—</span>}
+                        </td>
+                      );
+                    })}
                   </tr>
 
                   {/* Leaf products */}
-                  {!hasChildren && isLeafOpen && products.map((product, pi) => (
-                    <tr
-                      key={`${row.id}_prod_${product.code}`}
-                      className={cn(
-                        "hover:bg-blue-50/40 transition-colors",
-                        pi % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                      )}
-                    >
-                      <td className={cn("sticky left-0 z-10 bg-inherit border-b border-gray-50 py-1.5")} style={{ paddingLeft: indent + 24 }}>
-                        <button
-                          className="flex items-center gap-1.5 text-left group"
-                          onClick={() => onProductClick(product)}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-200 flex-shrink-0 group-hover:bg-blue-500" />
-                          <span className="text-xs text-gray-600 group-hover:text-blue-700 truncate max-w-[160px]">{product.name}</span>
-                          <span className="text-[9px] text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">↗</span>
-                        </button>
-                      </td>
-                      <td className="px-3 py-1.5 text-center border-b border-gray-50">
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(product.amount)} ₸</div>
-                        <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(product.qty)}</div>
-                      </td>
-                      {branches.map(b => {
-                        const bRows = allRows.filter(r => r.code === product.code && r.branch_code === b.code && !r.is_bonus);
-                        const amt = bRows.reduce((s, r) => s + r.amount, 0);
-                        const qty = bRows.reduce((s, r) => s + r.qty, 0);
-                        return (
-                          <td key={b.code} className="px-3 py-1.5 text-center border-b border-gray-50">
-                            {amt > 0
-                              ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(amt)} ₸</div><div className="text-[10px] text-gray-400">{fmtQ(qty)}</div></>
-                              : <span className="text-gray-200 text-xs">—</span>}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                  {!hasKids && isLeafOpen && products.map((p, pi) => {
+                    const perBranch: Record<string, { qty: number; amount: number }> = {};
+                    for (const r of allRows) {
+                      if (r.code !== p.code || r.is_bonus) continue;
+                      if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
+                      perBranch[r.branch_code].qty += r.qty;
+                      perBranch[r.branch_code].amount += r.amount;
+                    }
+                    return (
+                      <tr key={`${row.id}_${p.code}_${pi}`} className={cn("hover:bg-blue-50/40", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}>
+                        <td className="sticky left-0 z-10 bg-inherit border-b border-gray-50 py-1.5" style={{ paddingLeft: pl + 20, paddingRight: 12 }}>
+                          <button className="flex items-center gap-1.5 text-left group w-full" onClick={() => onProductClick(p)}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover:bg-blue-500 flex-shrink-0" />
+                            <span className="text-xs text-gray-600 group-hover:text-blue-700 truncate">{p.name}</span>
+                            <span className="text-[9px] text-blue-400 opacity-0 group-hover:opacity-100 flex-shrink-0">↗</span>
+                          </button>
+                        </td>
+                        <td className="px-3 py-1.5 text-center border-b border-gray-50">
+                          <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(p.amount)} ₸</div>
+                          <div className="text-[10px] text-gray-400">{fmtQ(p.qty)}</div>
+                        </td>
+                        {branches.map(b => {
+                          const c = perBranch[b.code];
+                          return (
+                            <td key={b.code} className="px-3 py-1.5 text-center border-b border-gray-50">
+                              {c && c.amount > 0
+                                ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-gray-400">{fmtQ(c.qty)}</div></>
+                                : <span className="text-gray-200 text-[11px]">—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </>
               );
             })}
 
-            {/* Bonuses row */}
-            {bonusTotal.amount > 0 && (
-              <tr className="bg-amber-50/40 border-t-2 border-amber-100">
-                <td className="sticky left-0 z-10 bg-amber-50 border-b border-amber-100 px-3 py-2.5" style={{ minWidth: LEFT_W }}>
+            {/* Bonuses */}
+            {bonusTotals.amount > 0 && (
+              <tr className="bg-amber-50/50 border-t-2 border-amber-100">
+                <td className="sticky left-0 z-10 bg-amber-50 border-b border-amber-100 px-3 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-amber-700">БОНУСЫ</span>
-                    <span className="text-[10px] text-amber-500 bg-amber-100 rounded px-1.5 py-0.5 font-semibold">бесплатная отгрузка</span>
+                    <span className="text-[10px] text-amber-500 bg-amber-100 rounded px-1.5 py-0.5">бесплатная отгрузка</span>
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-center border-b border-amber-100">
-                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmtM(bonusTotal.amount)} ₸</div>
-                  <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusTotal.qty)}</div>
+                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmtM(bonusTotals.amount)} ₸</div>
+                  <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusTotals.qty)}</div>
                 </td>
                 {branches.map(b => {
                   const c = bonusByBranch[b.code];
@@ -470,59 +543,130 @@ function PivotTable({
   );
 }
 
-// ── TMZ остатки ───────────────────────────────────────────────────────────────
-function TmzRow({ tmzSummary, branches }: {
-  tmzSummary: { branch_code: string; branch_name: string; total_amount: number; total_qty: number; sku_count: number }[];
-  branches: BranchInfo[];
+// ── TAB 4: Продукты ───────────────────────────────────────────────────────────
+function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
+  allRows: SalesReportRow[]; bonusRows: SalesReportRow[];
+  tree: PivotNode[]; branches: { code: string; name: string }[];
+  onProductClick: (r: SalesReportRow) => void;
 }) {
-  const total = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
-  if (total === 0) return null;
-  const byCode = Object.fromEntries(tmzSummary.map(r => [r.branch_code, r]));
+  const [search, setSearch] = useState("");
+  const [cat1, setCat1] = useState("");
+  const [branch, setBranch] = useState("");
+
+  const cat1Options = useMemo(() => tree.map(n => n.label), [tree]);
+
+  const products = useMemo(() => {
+    const sq = search.toLowerCase();
+    const map = new Map<string, { row: SalesReportRow; amt: number; qty: number; branchCount: number }>();
+    for (const r of allRows) {
+      if (r.is_bonus) continue;
+      if (cat1 && r.cat1 !== cat1) continue;
+      if (branch && r.branch_code !== branch) continue;
+      if (sq && !r.name.toLowerCase().includes(sq)) continue;
+      const k = r.code || r.name;
+      if (!map.has(k)) map.set(k, { row: r, amt: 0, qty: 0, branchCount: 0 });
+      const g = map.get(k)!; g.amt += r.amount; g.qty += r.qty;
+    }
+    // count unique branches per product
+    const branchMap = new Map<string, Set<string>>();
+    for (const r of allRows) {
+      if (r.is_bonus) continue;
+      const k = r.code || r.name;
+      if (!branchMap.has(k)) branchMap.set(k, new Set());
+      branchMap.get(k)!.add(r.branch_code);
+    }
+    for (const [k, g] of map) g.branchCount = branchMap.get(k)?.size ?? 0;
+    return [...map.values()].sort((a, b) => b.amt - a.amt);
+  }, [allRows, search, cat1, branch]);
+
+  const maxAmt = products[0]?.amt ?? 1;
+  const hasFilter = !!(search || cat1 || branch);
 
   return (
-    <div className="bg-white border border-emerald-200 rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table style={{ minWidth: 220 + (branches.length + 1) * 136 + "px" }}>
-          <colgroup>
-            <col style={{ width: 220 }} />
-            <col style={{ width: 136 }} />
-            {branches.map(b => <col key={b.code} style={{ width: 136 }} />)}
-          </colgroup>
-          <tbody>
-            <tr className="bg-emerald-600 text-white">
-              <td className="sticky left-0 z-10 bg-emerald-600 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <Package size={14} />
-                  <span className="text-sm font-bold">ТМЗ — остатки склада</span>
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-center">
-                <div className="text-sm font-black">{fmt(total)}</div>
-                <div className="text-[11px] text-emerald-200">{fmtQ(tmzSummary.reduce((s, r) => s + r.total_qty, 0))}</div>
-              </td>
-              {branches.map(b => {
-                const r = byCode[b.code];
-                return (
-                  <td key={b.code} className="px-3 py-2.5 text-center">
-                    {r
-                      ? <><div className="text-sm font-bold">{fmtM(r.total_amount)} ₸</div><div className="text-[10px] text-emerald-200">{fmtQ(r.total_qty)}</div><div className="text-[10px] text-emerald-300">{r.sku_count} SKU</div></>
-                      : <span className="text-emerald-300 text-xs">—</span>}
-                  </td>
-                );
-              })}
-            </tr>
-          </tbody>
-        </table>
+    <div className="space-y-3">
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Поиск по наименованию..." value={search} onChange={e => setSearch(e.target.value)}
+            className="pl-8 pr-7 py-2 text-sm border border-gray-200 rounded-lg w-60 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={12} /></button>}
+        </div>
+        <select value={cat1} onChange={e => setCat1(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Все категории</option>
+          {cat1Options.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={branch} onChange={e => setBranch(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Все филиалы</option>
+          {branches.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+        </select>
+        {hasFilter && (
+          <button onClick={() => { setSearch(""); setCat1(""); setBranch(""); }}
+            className="flex items-center gap-1 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+            <X size={11} />Сбросить
+          </button>
+        )}
+        <div className="ml-auto text-sm text-gray-400 tabular-nums">{products.length.toLocaleString("ru")} позиций</div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[1fr_130px_100px_48px] gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+          <div>Наименование</div><div className="text-right">Сумма</div><div className="text-right">Кол-во</div><div className="text-center">Фил.</div>
+        </div>
+        {products.length === 0 ? (
+          <div className="p-12 text-center text-gray-400 text-sm">Нет позиций</div>
+        ) : (
+          <>
+            {products.slice(0, 300).map((g, i) => {
+              const pct = maxAmt > 0 ? g.amt / maxAmt * 100 : 0;
+              return (
+                <button key={g.row.code || g.row.name + i}
+                  onClick={() => onProductClick(g.row)}
+                  className={cn("w-full text-left grid grid-cols-[1fr_130px_100px_48px] gap-3 items-center px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50/40 transition-colors group",
+                    i % 2 === 0 ? "bg-white" : "bg-gray-50/20")}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover:bg-blue-500 flex-shrink-0" />
+                      <span className="text-xs text-gray-700 group-hover:text-blue-700 truncate">{g.row.name}</span>
+                    </div>
+                    <div className="h-1 bg-gray-100 rounded-full overflow-hidden mt-1 ml-3">
+                      <div className="h-full bg-blue-300 group-hover:bg-blue-500 rounded-full transition-colors" style={{ width: `${pct}%` }} />
+                    </div>
+                    {g.row.cat1 && <div className="text-[10px] text-gray-400 ml-3 mt-0.5 truncate">{[g.row.cat1, g.row.cat2].filter(Boolean).join(" › ")}</div>}
+                  </div>
+                  <div className="text-right text-xs font-bold text-gray-800 tabular-nums">{fmtM(g.amt)} ₸</div>
+                  <div className="text-right text-xs text-gray-500 tabular-nums">{fmtQ(g.qty)}</div>
+                  <div className="text-center text-xs font-semibold text-blue-500">{g.branchCount}</div>
+                </button>
+              );
+            })}
+            {products.length > 300 && (
+              <div className="px-4 py-3 text-center text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+                Показаны первые 300 из {products.length.toLocaleString("ru")} позиций — уточните поиск
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: "overview", label: "Обзор", icon: BarChart2 },
+  { id: "branches", label: "Филиалы", icon: Building2 },
+  { id: "categories", label: "Категории", icon: Tag },
+  { id: "products", label: "Продукты", icon: ShoppingBag },
+];
+
 export default function SalesPage() {
   const { data: dates = [] } = useSalesReportDates();
   const { data: branchList = [] } = useSalesReportBranches();
   const [selectedDate, setSelectedDate] = useState("");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [showUpload, setShowUpload] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<SalesReportRow | null>(null);
 
@@ -531,33 +675,28 @@ export default function SalesPage() {
   }, [dates, selectedDate]);
 
   const p = { period_date: selectedDate || undefined };
-
   const { data: summary = [], isLoading } = useSalesReportSummary({ ...p, is_bonus: false });
   const { data: bonusSummary = [] } = useSalesReportSummary({ ...p, is_bonus: true });
   const { data: totals = [] } = useSalesReportTotals(p);
   const { data: allRows = [] } = useSalesReportRows({ ...p, is_bonus: false });
   const { data: bonusRows = [] } = useSalesReportRows({ ...p, is_bonus: true });
-  const { data: tmzSummary = [] } = useTmzSummary(
-    selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined
-  );
+  const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
 
   const tree = useMemo(() => buildPivotTree(summary), [summary]);
-
   const branchTotals = useMemo(() => {
     const m: Record<string, Cell> = {};
     for (const t of totals) m[t.branch_code] = { qty: t.qty, amount: t.amount };
     return m;
   }, [totals]);
-
-  const grandTotal = totals.reduce((s, t) => s + t.amount, 0);
-  const grandQty = totals.reduce((s, t) => s + t.qty, 0);
-  const topCat = tree[0]?.label ?? "—";
-  const isEmpty = !isLoading && summary.length === 0;
-
-  // Sort branches by total amount desc
   const orderedBranches = useMemo(() =>
     [...branchList].sort((a, b) => (branchTotals[b.code]?.amount ?? 0) - (branchTotals[a.code]?.amount ?? 0)),
     [branchList, branchTotals]);
+
+  const grandTotal = totals.reduce((s, t) => s + t.amount, 0);
+  const grandQty = totals.reduce((s, t) => s + t.qty, 0);
+  const bonusTotal = bonusSummary.reduce((s, r) => s + r.amount, 0);
+  const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
+  const isEmpty = !isLoading && summary.length === 0;
 
   return (
     <div className="space-y-4 max-w-[1600px]">
@@ -568,20 +707,13 @@ export default function SalesPage() {
           <h1 className="text-xl font-bold text-gray-900">Продажи</h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <select
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          >
+          <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
             {dates.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
-          <button
-            onClick={() => setShowUpload(v => !v)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-              showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700"
-            )}
-          >
+          <button onClick={() => setShowUpload(v => !v)}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+              showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700")}>
             <Upload size={14} />Загрузить
           </button>
         </div>
@@ -594,37 +726,44 @@ export default function SalesPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
-            <div className="text-lg font-black">{fmt(grandTotal)}</div>
+            <div className="text-xl font-black">{fmt(grandTotal)}</div>
             <div className="text-[11px] text-blue-200">{fmtQ(grandQty)}</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Топ категория</div>
-            <div className="text-sm font-black text-gray-900 truncate">{topCat}</div>
-            <div className="text-[11px] text-gray-400">{tree[0] ? fmtM(tree[0].total.amount) + " ₸" : ""}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
+            <div className="text-xl font-black text-amber-600">{fmt(bonusTotal)}</div>
+            <div className="text-[11px] text-gray-400">{grandTotal > 0 ? (bonusTotal / grandTotal * 100).toFixed(1) : 0}% от реализации</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Категорий</div>
-            <div className="text-lg font-black text-gray-900">{tree.length}</div>
+            <div className="text-xl font-black text-gray-900">{tree.length}</div>
             <div className="text-[11px] text-gray-400">{orderedBranches.length} филиалов</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Позиций</div>
-            <div className="text-lg font-black text-gray-900">
-              {(() => { const s = new Set(allRows.map(r => r.code || r.name)); return s.size.toLocaleString("ru"); })()}
-            </div>
-            <div className="text-[11px] text-gray-400">уникальных SKU</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
+            <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
+            <div className="text-[11px] text-gray-400">{tmzSummary.reduce((s, r) => s + r.sku_count, 0).toLocaleString("ru")} SKU</div>
           </div>
         </div>
       )}
 
-      {/* Hint */}
+      {/* Tabs */}
       {!isEmpty && (
-        <p className="text-xs text-gray-400">
-          Нажмите на категорию, чтобы раскрыть подкатегории. Листовая категория раскроет список товаров — кликните на товар для детального просмотра по филиалам.
-        </p>
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+                  activeTab === tab.id ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700")}>
+                <Icon size={14} />{tab.label}
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      {/* Main content */}
+      {/* Content */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">
           <Loader2 size={24} className="animate-spin mr-2" />Загрузка...
@@ -636,28 +775,19 @@ export default function SalesPage() {
             {dates.length === 0 ? "Данные не загружены. Нажмите «Загрузить»." : "Нет данных по выбранному периоду."}
           </div>
         </div>
+      ) : activeTab === "overview" ? (
+        <OverviewTab tree={tree} totals={totals} grandTotal={grandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} />
+      ) : activeTab === "branches" ? (
+        <BranchesTab totals={totals} grandTotal={grandTotal} tree={tree} tmzSummary={tmzSummary} />
+      ) : activeTab === "categories" ? (
+        <CategoriesTab tree={tree} branches={orderedBranches} branchTotals={branchTotals}
+          allRows={allRows} bonusSummary={bonusSummary} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
       ) : (
-        <div className="space-y-4">
-          <PivotTable
-            tree={tree}
-            branches={orderedBranches}
-            branchTotals={branchTotals}
-            allRows={allRows}
-            bonusRows={bonusRows}
-            bonusSummary={bonusSummary}
-            onProductClick={setSelectedProduct}
-          />
-          <TmzRow tmzSummary={tmzSummary} branches={orderedBranches} />
-        </div>
+        <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct} />
       )}
 
       {selectedProduct && (
-        <ProductModal
-          product={selectedProduct}
-          allRows={allRows}
-          bonusRows={bonusRows}
-          onClose={() => setSelectedProduct(null)}
-        />
+        <ProductModal product={selectedProduct} allRows={allRows} bonusRows={bonusRows} onClose={() => setSelectedProduct(null)} />
       )}
     </div>
   );
