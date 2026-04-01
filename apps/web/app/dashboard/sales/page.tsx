@@ -516,7 +516,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                 const c = branchTotals[b.code];
                 return (
                   <td key={b.code} className="px-3 py-2.5 text-center">
-                    {c ? <><div className="text-sm font-bold">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-blue-200">{grand.amount > 0 ? (c.amount / grand.amount * 100).toFixed(0) : 0}%</div></> : <span className="text-blue-300 text-xs">—</span>}
+                    {c ? <><div className="text-sm font-bold">{fmt(c.amount)}</div><div className="text-[10px] text-blue-200">{grand.amount > 0 ? (c.amount / grand.amount * 100).toFixed(0) : 0}%</div></> : <span className="text-blue-300 text-xs">—</span>}
                   </td>
                 );
               })}
@@ -547,7 +547,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                       </button>
                     </td>
                     <td className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
-                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmtM(row.total.amount)} ₸</div>
+                      <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(row.total.amount)}</div>
                       <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(row.total.qty)}</div>
                     </td>
                     {branches.map(b => {
@@ -557,7 +557,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                         <td key={b.code} className="px-3 py-2.5 text-center border-b border-gray-100 align-top">
                           {c && c.amount > 0 ? (
                             <div className="space-y-1">
-                              <div className="text-xs font-semibold tabular-nums text-gray-800">{fmtM(c.amount)} ₸</div>
+                              <div className="text-xs font-semibold tabular-nums text-gray-800">{fmt(c.amount)}</div>
                               <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(c.qty)}</div>
                               <div className="flex items-center gap-1">
                                 <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -575,8 +575,8 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                   {/* Leaf products */}
                   {!hasKids && isLeafOpen && products.map((p, pi) => {
                     const perBranch: Record<string, { qty: number; amount: number }> = {};
-                    for (const r of allRows) {
-                      if (r.code !== p.code || r.is_bonus) continue;
+                    for (const r of [...allRows, ...bonusRows]) {
+                      if (r.code !== p.code) continue;
                       if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
                       perBranch[r.branch_code].qty += r.qty;
                       perBranch[r.branch_code].amount += r.amount;
@@ -591,7 +591,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                           </button>
                         </td>
                         <td className="px-3 py-1.5 text-center border-b border-gray-50">
-                          <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(p.amount)} ₸</div>
+                          <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
                           <div className="text-[10px] text-gray-400">{fmtQ(p.qty)}</div>
                         </td>
                         {branches.map(b => {
@@ -599,7 +599,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                           return (
                             <td key={b.code} className="px-3 py-1.5 text-center border-b border-gray-50">
                               {c && c.amount > 0
-                                ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-gray-400">{fmtQ(c.qty)}</div></>
+                                ? <><div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(c.amount)}</div><div className="text-[10px] text-gray-400">{fmtQ(c.qty)}</div></>
                                 : <span className="text-gray-200 text-[11px]">—</span>}
                             </td>
                           );
@@ -621,7 +621,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-center border-b border-amber-100">
-                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmtM(bonusTotals.amount)} ₸</div>
+                  <div className="text-xs font-bold text-amber-700 tabular-nums">{fmt(bonusTotals.amount)}</div>
                   <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusTotals.qty)}</div>
                 </td>
                 {branches.map(b => {
@@ -629,7 +629,7 @@ function CategoriesTab({ tree, branches, branchTotals, allRows, bonusSummary, bo
                   return (
                     <td key={b.code} className="px-3 py-2.5 text-center border-b border-amber-100">
                       {c && c.amount > 0
-                        ? <><div className="text-xs font-bold text-amber-600 tabular-nums">{fmtM(c.amount)} ₸</div><div className="text-[10px] text-amber-400 tabular-nums">{fmtQ(c.qty)}</div></>
+                        ? <><div className="text-xs font-bold text-amber-600 tabular-nums">{fmt(c.amount)}</div><div className="text-[10px] text-amber-400 tabular-nums">{fmtQ(c.qty)}</div></>
                         : <span className="text-amber-200 text-xs">—</span>}
                     </td>
                   );
