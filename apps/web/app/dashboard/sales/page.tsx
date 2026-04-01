@@ -9,9 +9,9 @@ import {
   useSalesReportDates, useSalesReportBranches, useSalesReportSummary,
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
   useSalesReportStats, useClearSalesReport,
-  useTmzSummary,
+  useTmzSummary, useOsvDates, useOsvByBranch,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
-  type TmzSummaryRow,
+  type TmzSummaryRow, type OsvByBranchRow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
@@ -382,49 +382,111 @@ function OverviewTab({ tree, totals, grandTotal, bonusTotal, tmzTotal, realisati
 }
 
 // ── TAB 2: Филиалы ────────────────────────────────────────────────────────────
-function BranchesTab({ totals, grandTotal, tree, tmzSummary }: {
+function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows, debtByBranch }: {
   totals: SalesReportTotal[]; grandTotal: number; tree: PivotNode[]; tmzSummary: TmzSummaryRow[];
+  allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; debtByBranch: OsvByBranchRow[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const sorted = useMemo(() => [...totals].sort((a, b) => b.amount - a.amount), [totals]);
   const tmzByCode = useMemo(() => Object.fromEntries(tmzSummary.map(r => [r.branch_code, r])), [tmzSummary]);
+  const debtByName = useMemo(() => Object.fromEntries(debtByBranch.map(r => [r.branch_name, r])), [debtByBranch]);
+
+  const topProductsByBranch = useMemo(() => {
+    const result: Record<string, { name: string; amount: number; qty: number }[]> = {};
+    const combined = [...allRows, ...bonusRows];
+    for (const t of sorted) {
+      const map = new Map<string, { name: string; amount: number; qty: number }>();
+      for (const r of combined) {
+        if (r.branch_code !== t.branch_code) continue;
+        const k = r.code || r.name;
+        if (!map.has(k)) map.set(k, { name: r.name, amount: 0, qty: 0 });
+        const g = map.get(k)!; g.amount += r.amount; g.qty += r.qty;
+      }
+      result[t.branch_code] = [...map.values()].sort((a, b) => b.amount - a.amount).slice(0, 5);
+    }
+    return result;
+  }, [sorted, allRows, bonusRows]);
 
   const catChartData = useMemo(() => {
     if (!selected) return [];
     return tree
-      .map(n => ({ name: n.label.length > 16 ? n.label.slice(0, 16) + "…" : n.label, amount: n.byBranch[selected]?.amount ?? 0, qty: n.byBranch[selected]?.qty ?? 0 }))
+      .map(n => ({ name: n.label.length > 18 ? n.label.slice(0, 18) + "…" : n.label, amount: n.byBranch[selected]?.amount ?? 0, qty: n.byBranch[selected]?.qty ?? 0 }))
       .filter(x => x.amount > 0)
       .sort((a, b) => b.amount - a.amount)
-      .slice(0, 10);
+      .slice(0, 12);
   }, [selected, tree]);
 
   const selBranch = sorted.find(t => t.branch_code === selected);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {sorted.map((t, i) => {
           const share = grandTotal > 0 ? t.amount / grandTotal * 100 : 0;
           const tmz = tmzByCode[t.branch_code];
+          const debt = debtByName[t.branch_name];
+          const topProducts = topProductsByBranch[t.branch_code] ?? [];
           const isSel = selected === t.branch_code;
+          const color = C[i % C.length];
           return (
-            <button key={t.branch_code} onClick={() => setSelected(isSel ? null : t.branch_code)}
-              className={cn("text-left p-4 rounded-xl border-2 transition-all hover:shadow-md",
-                isSel ? "border-blue-500 bg-blue-50 shadow-md" : "border-gray-200 bg-white hover:border-gray-300")}>
-              <div className="flex items-start justify-between mb-2">
-                <span className={cn("text-xs font-bold truncate", isSel ? "text-blue-700" : "text-gray-700")}>{t.branch_name}</span>
-                <span className="text-[10px] font-mono text-gray-400 ml-1 flex-shrink-0">#{i + 1}</span>
+            <div key={t.branch_code}
+              className={cn("rounded-xl border-2 bg-white overflow-hidden transition-all",
+                isSel ? "border-blue-500 shadow-lg" : "border-gray-200 hover:border-gray-300 hover:shadow-md")}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100" style={{ borderLeftColor: color, borderLeftWidth: 4 }}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                  <span className="text-sm font-bold text-gray-900">{t.branch_name}</span>
+                </div>
+                <span className="text-[10px] font-mono text-gray-400">#{i + 1}</span>
               </div>
-              <div className={cn("text-lg font-black tabular-nums", isSel ? "text-blue-900" : "text-gray-900")}>{fmtM(t.amount)} ₸</div>
-              <div className="text-[11px] text-gray-400 tabular-nums">{fmtQ(t.qty)}</div>
-              <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: C[i % C.length] }} />
+              {/* Sales */}
+              <div className="px-4 pt-3 pb-3">
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Отгрузка</div>
+                <div className="text-base font-black text-gray-900 tabular-nums">{fmt(t.amount)}</div>
+                <div className="text-[11px] text-gray-500 tabular-nums mb-2">{fmtQ(t.qty)}</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: color }} />
+                  </div>
+                  <span className="text-[10px] text-gray-500 font-semibold w-9 text-right flex-shrink-0">{share.toFixed(1)}%</span>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-gray-400">{share.toFixed(1)}%</span>
-                {tmz && <span className="text-[10px] text-emerald-600">{fmtM(tmz.total_amount)} ₸ TMZ</span>}
+              {/* Debt + TMZ */}
+              <div className="grid grid-cols-2 border-t border-b border-gray-100">
+                <div className="px-4 py-2.5 border-r border-gray-100">
+                  <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Дебиторка</div>
+                  {debt
+                    ? <div className={cn("text-xs font-bold tabular-nums", debt.total_net > 0 ? "text-orange-600" : "text-gray-500")}>{fmt(debt.total_net)}</div>
+                    : <div className="text-xs text-gray-300">—</div>}
+                </div>
+                <div className="px-4 py-2.5">
+                  <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">ТМЗ остаток</div>
+                  {tmz
+                    ? <><div className="text-xs font-bold text-emerald-600 tabular-nums">{fmt(tmz.total_amount)}</div><div className="text-[9px] text-gray-400">{tmz.sku_count.toLocaleString("ru")} SKU</div></>
+                    : <div className="text-xs text-gray-300">—</div>}
+                </div>
               </div>
-            </button>
+              {/* Top products */}
+              <div className="px-4 py-3">
+                <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Топ продуктов</div>
+                {topProducts.length === 0
+                  ? <div className="text-[10px] text-gray-300">нет данных</div>
+                  : topProducts.map((p, pi) => (
+                    <div key={pi} className="flex items-center gap-2 py-0.5">
+                      <span className="text-[9px] text-gray-300 w-3 flex-shrink-0">{pi + 1}.</span>
+                      <span className="text-[10px] text-gray-700 flex-1 truncate min-w-0">{p.name}</span>
+                      <span className="text-[10px] font-semibold text-gray-800 tabular-nums flex-shrink-0">{fmt(p.amount)}</span>
+                    </div>
+                  ))}
+              </div>
+              {/* Expand */}
+              <button onClick={() => setSelected(isSel ? null : t.branch_code)}
+                className={cn("w-full flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold border-t border-gray-100 transition-colors",
+                  isSel ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-blue-500 hover:bg-gray-50")}>
+                {isSel ? <><ChevronDown size={11} />Скрыть категории</> : <><ChevronRight size={11} />Категории по отгрузке</>}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -433,16 +495,16 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary }: {
         <div className="bg-white border border-blue-100 rounded-xl p-5">
           <div className="flex items-center gap-3 mb-4">
             <Building2 size={16} className="text-blue-500" />
-            <span className="text-sm font-bold text-gray-800">{selBranch?.branch_name} — продажи по категориям</span>
+            <span className="text-sm font-bold text-gray-800">{selBranch?.branch_name} — категории</span>
             <div className="text-sm font-black text-blue-700 ml-2">{selBranch ? fmt(selBranch.amount) : ""}</div>
             <button onClick={() => setSelected(null)} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
           </div>
           <ResponsiveContainer width="100%" height={Math.max(100, catChartData.length * 44)}>
-            <BarChart data={catChartData} layout="vertical" margin={{ left: 0, right: 60, top: 4, bottom: 4 }}>
+            <BarChart data={catChartData} layout="vertical" margin={{ left: 0, right: 80, top: 4, bottom: 4 }}>
               <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={120} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={140} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTip />} />
-              <Bar dataKey="amount" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={28}>
+              <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
                 {catChartData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
               </Bar>
             </BarChart>
@@ -734,7 +796,7 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
                     </div>
                     {g.row.cat1 && <div className="text-[10px] text-gray-400 ml-3 mt-0.5 truncate">{[g.row.cat1, g.row.cat2].filter(Boolean).join(" › ")}</div>}
                   </div>
-                  <div className="text-right text-xs font-bold text-gray-800 tabular-nums">{fmtM(g.amt)} ₸</div>
+                  <div className="text-right text-xs font-bold text-gray-800 tabular-nums">{fmt(g.amt)}</div>
                   <div className="text-right text-xs text-gray-500 tabular-nums">{fmtQ(g.qty)}</div>
                   <div className="text-center text-xs font-semibold text-blue-500">{g.branchCount}</div>
                 </button>
@@ -779,6 +841,8 @@ export default function SalesPage() {
   const { data: allRows = [] } = useSalesReportRows({ ...p, is_bonus: false });
   const { data: bonusRows = [] } = useSalesReportRows({ ...p, is_bonus: true });
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
+  const { data: osvDates = [] } = useOsvDates();
+  const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
 
   // Combined tree: regular + bonus categories (ВАРЕНЬЕ, МАСЛО, ЧАЙ etc.)
   const tree = useMemo(() => buildPivotTree([...summary, ...bonusSummary]), [summary, bonusSummary]);
@@ -889,7 +953,7 @@ export default function SalesPage() {
       ) : activeTab === "overview" ? (
         <OverviewTab tree={tree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} />
       ) : activeTab === "branches" ? (
-        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={tree} tmzSummary={tmzSummary} />
+        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={tree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
       ) : activeTab === "categories" ? (
         <CategoriesTab tree={tree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusSummary={bonusSummary} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
