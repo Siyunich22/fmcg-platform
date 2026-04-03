@@ -8,14 +8,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   Package, Upload, CheckCircle, XCircle, Loader2,
-  ChevronUp, ChevronDown, Search, X,
+  ChevronDown, ChevronRight, Search, X,
 } from "lucide-react";
-type SortKey = "product_name" | "branch_name" | "qty_end" | "amount_end";
-
-function fmt(n: number) {
-  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
-}
-type SortDir = "asc" | "desc";
 
 const BRANCH_ORDER = [
   "ALMATY", "BEREКЕ", "MAIN", "AKTAU", "AKTOBE", "ATYRAU",
@@ -23,6 +17,11 @@ const BRANCH_ORDER = [
   "SHYMKENT", "PAVLODAR", "URALSK",
 ];
 
+function fmt(n: number) {
+  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
+}
+
+// ── Upload block ──────────────────────────────────────────────────────────────
 function UploadBlock({ onUploaded }: { onUploaded: () => void }) {
   const upload = useUploadTmzFiles();
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -45,7 +44,10 @@ function UploadBlock({ onUploaded }: { onUploaded: () => void }) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+    accept: {
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    },
     multiple: true,
     disabled: state === "loading",
   });
@@ -92,69 +94,27 @@ function UploadBlock({ onUploaded }: { onUploaded: () => void }) {
       ) : (
         <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
           <Upload size={16} />
-          {isDragActive ? "Отпустите файл" : "Загрузить файл 1330 ТМЗ (.xls)"}
+          {isDragActive ? "Отпустите файл" : "Загрузить файл ТМЗ 1330 (.xls / .xlsx)"}
         </div>
       )}
     </div>
   );
 }
 
-function SummaryCards({ summary }: { summary: TmzSummaryRow[] }) {
-  const sorted = useMemo(() => {
-    return [...summary].sort((a, b) => {
-      const ai = BRANCH_ORDER.indexOf(a.branch_code);
-      const bi = BRANCH_ORDER.indexOf(b.branch_code);
-      if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      return (a.sub_branch ?? "").localeCompare(b.sub_branch ?? "");
-    });
-  }, [summary]);
-
-  const grandTotal = summary.reduce((s, r) => s + r.total_amount, 0);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-gray-700">Итого по всем филиалам</div>
-        <div className="text-xl font-black text-gray-900">{fmt(grandTotal)}</div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-        {sorted.map((r) => (
-          <div key={`${r.branch_code}-${r.sub_branch ?? ""}`}
-            className="bg-white border border-gray-200 rounded-xl px-3 py-2.5">
-            <div className="text-xs font-semibold text-gray-500 truncate">
-              {r.branch_name}{r.sub_branch ? ` · ${r.sub_branch}` : ""}
-            </div>
-            <div className="text-sm font-black text-gray-900 mt-0.5">{fmt(r.total_amount)}</div>
-            <div className="text-xs text-gray-400">{r.total_qty.toLocaleString("ru")} шт · {r.sku_count} SKU</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
-  if (col !== sortKey) return <ChevronUp size={12} className="text-gray-300" />;
-  return sortDir === "asc" ? <ChevronUp size={12} className="text-blue-500" /> : <ChevronDown size={12} className="text-blue-500" />;
-}
-
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function TmzPage() {
   const { data: dates = [] } = useTmzDates();
-  const [selectedDate, setSelectedDate] = useState<string>("");
-
-  // Auto-select the first available date when dates load
-  useEffect(() => {
-    if (dates.length > 0 && !selectedDate) {
-      setSelectedDate(dates[0]);
-    }
-  }, [dates, selectedDate]);
+  const [selectedDate, setSelectedDate] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("");
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("amount_end");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [showUpload, setShowUpload] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const periodDate = selectedDate || dates[0] || undefined;
+  useEffect(() => {
+    if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
+  }, [dates, selectedDate]);
+
+  const periodDate = selectedDate || undefined;
   const { data: summary = [], refetch: refetchSummary } = useTmzSummary(periodDate);
   const { data: rows = [], isLoading, refetch: refetchRows } = useTmz({
     period_date: periodDate,
@@ -162,6 +122,21 @@ export default function TmzPage() {
     search: search || undefined,
   });
 
+  function handleUploaded() {
+    refetchSummary();
+    refetchRows();
+    setShowUpload(false);
+  }
+
+  const toggleCollapse = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  // Branches list from summary (for filter dropdown)
   const branches = useMemo(() => {
     const map = new Map<string, string>();
     summary.forEach((r) => {
@@ -174,37 +149,35 @@ export default function TmzPage() {
     });
   }, [summary]);
 
-  const sorted = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      let av: string | number = a[sortKey] ?? "";
-      let bv: string | number = b[sortKey] ?? "";
-      if (typeof av === "string") av = av.toLowerCase();
-      if (typeof bv === "string") bv = bv.toLowerCase();
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [rows, sortKey, sortDir]);
+  // KPI from summary
+  const grandTotal = summary.reduce((s, r) => s + r.total_amount, 0);
+  const grandQty = summary.reduce((s, r) => s + r.total_qty, 0);
+  const skuCount = useMemo(() => {
+    const seen = new Set<string>();
+    rows.forEach(r => seen.add(r.product_name));
+    return seen.size;
+  }, [rows]);
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir(key === "amount_end" || key === "qty_end" ? "desc" : "asc");
+  // Group rows: branch → sub_branch (or "—") → products
+  const grouped = useMemo(() => {
+    const map = new Map<string, { branchName: string; subs: Map<string, TmzRow[]> }>();
+    for (const row of rows) {
+      const bKey = row.branch_code;
+      const sub = row.sub_branch || "";
+      if (!map.has(bKey)) map.set(bKey, { branchName: row.branch_name, subs: new Map() });
+      const entry = map.get(bKey)!;
+      if (!entry.subs.has(sub)) entry.subs.set(sub, []);
+      entry.subs.get(sub)!.push(row);
     }
-  }
+    // Sort branches by BRANCH_ORDER
+    return [...map.entries()].sort((a, b) => {
+      const ai = BRANCH_ORDER.indexOf(a[0]);
+      const bi = BRANCH_ORDER.indexOf(b[0]);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+  }, [rows]);
 
-  function handleUploaded() {
-    refetchSummary();
-    refetchRows();
-    setShowUpload(false);
-  }
-
-  const filteredSummary = useMemo(() => {
-    if (!selectedBranch) return summary;
-    return summary.filter(r => r.branch_code === selectedBranch);
-  }, [summary, selectedBranch]);
+  const isEmpty = !isLoading && rows.length === 0;
 
   return (
     <div className="space-y-6 max-w-[1400px]">
@@ -212,49 +185,67 @@ export default function TmzPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Package size={20} className="text-blue-600" />
-          <h1 className="text-xl font-bold text-gray-900">ТМЗ — Остатки (1330)</h1>
+          <h1 className="text-xl font-bold text-gray-900">ТМЗ — Остатки</h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <select
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
-            {dates.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
+            {dates.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
           <button
-            onClick={() => setShowUpload(!showUpload)}
+            onClick={() => setShowUpload(v => !v)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
               showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700"
             )}
           >
-            <Upload size={14} />
-            Загрузить файл
+            <Upload size={14} />Загрузить файл
           </button>
         </div>
       </div>
 
-      {/* Upload */}
-      {showUpload && (
-        <UploadBlock onUploaded={handleUploaded} />
+      {showUpload && <UploadBlock onUploaded={handleUploaded} />}
+
+      {/* KPI cards (Stock-style) */}
+      {summary.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
+            <CheckCircle size={20} className="text-emerald-500 flex-shrink-0" />
+            <div>
+              <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Итого ТМЗ</div>
+              <div className="text-2xl font-black text-emerald-700">{fmt(grandTotal)}</div>
+            </div>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+            <Package size={20} className="text-blue-500 flex-shrink-0" />
+            <div>
+              <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Количество</div>
+              <div className="text-2xl font-black text-blue-700">{grandQty.toLocaleString("ru")} шт</div>
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+            <Package size={20} className="text-amber-500 flex-shrink-0" />
+            <div>
+              <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Позиций (SKU)</div>
+              <div className="text-2xl font-black text-amber-700">{skuCount.toLocaleString("ru")}</div>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Summary cards */}
-      {summary.length > 0 && <SummaryCards summary={filteredSummary.length > 0 && selectedBranch ? filteredSummary : summary} />}
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative">
+      {/* Filters (Stock-style) */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Поиск по названию..."
+            placeholder="Поиск по товару..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-lg w-72 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {search && (
             <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -262,120 +253,160 @@ export default function TmzPage() {
             </button>
           )}
         </div>
-
         <select
           value={selectedBranch}
           onChange={(e) => setSelectedBranch(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="">Все филиалы</option>
           {branches.map(([code, name]) => (
             <option key={code} value={code}>{name}</option>
           ))}
         </select>
-
         {(search || selectedBranch) && (
-          <button onClick={() => { setSearch(""); setSelectedBranch(""); }}
-            className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50">
-            Сбросить
+          <button
+            onClick={() => { setSearch(""); setSelectedBranch(""); }}
+            className="flex items-center gap-1 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50"
+          >
+            <X size={11} />Сбросить
           </button>
         )}
-
-        <div className="ml-auto text-sm text-gray-400 self-center">
-          {sorted.length.toLocaleString("ru")} позиций
+        <div className="ml-auto text-sm text-gray-400 self-center tabular-nums">
+          {rows.length.toLocaleString("ru")} позиций
         </div>
       </div>
 
-      {/* Table */}
+      {/* Grouped table (Stock-style) */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <Package size={14} className="text-gray-400" />
+          <span className="text-sm font-bold text-gray-900">Остатки по товарам</span>
+          <span className="text-xs text-gray-400 font-mono">({rows.length.toLocaleString("ru")} поз.)</span>
+        </div>
+
         {isLoading ? (
-          <div className="p-12 text-center text-gray-400">
-            <Loader2 size={24} className="animate-spin mx-auto mb-2" />
+          <div className="py-12 text-center text-gray-400 text-sm">
+            <Loader2 size={24} className="animate-spin mx-auto mb-2 text-blue-400" />
             Загрузка...
           </div>
-        ) : sorted.length === 0 ? (
-          <div className="p-12 text-center">
-            <Package size={32} className="text-gray-200 mx-auto mb-3" />
-            <div className="text-gray-400 text-sm">
-              {dates.length === 0 ? "Данные не загружены. Нажмите «Загрузить файл»." : "Нет данных по выбранным фильтрам."}
-            </div>
+        ) : isEmpty ? (
+          <div className="py-12 text-center text-gray-400 text-sm">
+            {dates.length === 0 ? "Данные не загружены. Нажмите «Загрузить файл»." : "Нет данных по выбранным фильтрам."}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide w-8">#</th>
-                  <th
-                    className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide cursor-pointer hover:text-gray-600 select-none"
-                    onClick={() => toggleSort("product_name")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Наименование <SortIcon col="product_name" sortKey={sortKey} sortDir={sortDir} />
-                    </div>
-                  </th>
-                  <th
-                    className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide cursor-pointer hover:text-gray-600 select-none"
-                    onClick={() => toggleSort("branch_name")}
-                  >
-                    <div className="flex items-center gap-1">
-                      Филиал <SortIcon col="branch_name" sortKey={sortKey} sortDir={sortDir} />
-                    </div>
-                  </th>
-                  <th
-                    className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide cursor-pointer hover:text-gray-600 select-none"
-                    onClick={() => toggleSort("qty_end")}
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      Кол-во <SortIcon col="qty_end" sortKey={sortKey} sortDir={sortDir} />
-                    </div>
-                  </th>
-                  <th
-                    className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide cursor-pointer hover:text-gray-600 select-none"
-                    onClick={() => toggleSort("amount_end")}
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      Сумма <SortIcon col="amount_end" sortKey={sortKey} sortDir={sortDir} />
-                    </div>
-                  </th>
+                <tr className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide w-8"></th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Товар</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Кол-во</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Сумма</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((row, i) => (
-                  <tr key={row.id} className={cn("border-b border-gray-50 hover:bg-gray-50/60", i % 2 === 0 ? "bg-white" : "bg-gray-50/30")}>
-                    <td className="px-4 py-2.5 text-xs text-gray-300">{i + 1}</td>
-                    <td className="px-4 py-2.5 text-gray-800 max-w-[400px]">
-                      {row.product_name}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-gray-700 font-medium">{row.branch_name}</span>
-                        {row.sub_branch && (
-                          <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 rounded px-1.5 py-0.5 font-semibold">
-                            {row.sub_branch}
+                {grouped.map(([branchCode, { branchName, subs }]) => {
+                  const branchKey = `branch-${branchCode}`;
+                  const branchRows = [...subs.values()].flat();
+                  const branchTotal = branchRows.reduce((s, r) => s + r.amount_end, 0);
+                  const branchQty = branchRows.reduce((s, r) => s + r.qty_end, 0);
+                  const isCollapsed = collapsed.has(branchKey);
+
+                  return (
+                    <>
+                      {/* Branch header row */}
+                      <tr
+                        key={branchKey}
+                        className="bg-gray-100 border-b border-gray-200 cursor-pointer hover:bg-gray-150"
+                        onClick={() => toggleCollapse(branchKey)}
+                      >
+                        <td className="px-4 py-2.5 text-gray-500">
+                          {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                        </td>
+                        <td className="px-4 py-2.5 font-bold text-gray-700 text-xs uppercase tracking-wide">
+                          {branchName}
+                          <span className="ml-2 font-normal text-gray-400 normal-case">
+                            {branchRows.length} позиций
                           </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-gray-700">
-                      {row.qty_end > 0 ? row.qty_end.toLocaleString("ru") : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-gray-900">
-                      {row.amount_end !== 0 ? fmt(row.amount_end) : <span className="text-gray-300">—</span>}
-                    </td>
-                  </tr>
-                ))}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-gray-600">
+                          {branchQty.toLocaleString("ru")}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs font-bold text-gray-800">
+                          {fmt(branchTotal)}
+                        </td>
+                      </tr>
+
+                      {!isCollapsed && [...subs.entries()].map(([sub, subRows]) => {
+                        const subKey = `sub-${branchCode}-${sub}`;
+                        const hasSubBranch = sub !== "";
+                        const subTotal = subRows.reduce((s, r) => s + r.amount_end, 0);
+                        const subQty = subRows.reduce((s, r) => s + r.qty_end, 0);
+                        const isSubCollapsed = collapsed.has(subKey);
+
+                        return (
+                          <>
+                            {/* Sub-branch header (only if sub_branch exists) */}
+                            {hasSubBranch && (
+                              <tr
+                                key={subKey}
+                                className="bg-blue-50/40 border-b border-blue-100/50 cursor-pointer hover:bg-blue-50"
+                                onClick={() => toggleCollapse(subKey)}
+                              >
+                                <td className="pl-8 py-2 text-blue-400">
+                                  {isSubCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                </td>
+                                <td className="px-4 py-2 text-xs font-semibold text-blue-700">
+                                  {sub}
+                                  <span className="ml-2 font-normal text-blue-400">{subRows.length} поз.</span>
+                                </td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-blue-600">
+                                  {subQty.toLocaleString("ru")}
+                                </td>
+                                <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-blue-700">
+                                  {fmt(subTotal)}
+                                </td>
+                              </tr>
+                            )}
+
+                            {/* Product rows */}
+                            {(!hasSubBranch || !isSubCollapsed) && subRows.map((row, i) => (
+                              <tr
+                                key={row.id}
+                                className={cn(
+                                  "border-b border-gray-50 hover:bg-gray-50/60",
+                                  i % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+                                )}
+                              >
+                                <td></td>
+                                <td className={cn("px-4 py-2.5 text-gray-900 max-w-[480px]", hasSubBranch ? "pl-12" : "pl-8")}>
+                                  <div className="truncate text-sm">{row.product_name}</div>
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-gray-700 text-sm">
+                                  {row.qty_end > 0 ? row.qty_end.toLocaleString("ru") : <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono font-semibold text-gray-900 text-sm">
+                                  {row.amount_end !== 0 ? fmt(row.amount_end) : <span className="text-gray-300">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </>
+                        );
+                      })}
+                    </>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-gray-100 border-t-2 border-gray-200">
-                  <td colSpan={3} className="px-4 py-3 text-xs font-bold text-gray-600 uppercase">
-                    Итого по таблице
+                  <td colSpan={2} className="px-4 py-3 text-xs font-bold text-gray-600 uppercase">
+                    Итого
                   </td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-gray-800">
-                    {sorted.reduce((s, r) => s + r.qty_end, 0).toLocaleString("ru")}
+                    {rows.reduce((s, r) => s + r.qty_end, 0).toLocaleString("ru")}
                   </td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-gray-900">
-                    {fmt(sorted.reduce((s, r) => s + r.amount_end, 0))}
+                    {fmt(rows.reduce((s, r) => s + r.amount_end, 0))}
                   </td>
                 </tr>
               </tfoot>
