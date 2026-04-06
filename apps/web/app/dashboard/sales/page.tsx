@@ -1226,7 +1226,7 @@ export default function SalesPage() {
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
-  const { data: cashFlow = [] } = useCashFlowSummary();
+  const { data: cashFlow = [], isError: cashFlowError, error: cashFlowErr } = useCashFlowSummary();
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
@@ -1320,7 +1320,11 @@ export default function SalesPage() {
           <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-500">Поступления</div>
             <div className="text-xl font-black text-teal-700">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</div>
-            <div className="text-[11px] text-teal-400">{cashFlow.length > 0 ? `${cashFlow.length} филиалов` : "нет данных"}</div>
+            <div className="text-[11px] text-teal-400">
+              {cashFlowError
+                ? <span className="text-red-400" title={cashFlowErr instanceof Error ? cashFlowErr.message : "ошибка"}>⚠ ошибка API</span>
+                : cashFlow.length > 0 ? `${cashFlow.length} филиалов` : "нет данных"}
+            </div>
           </div>
         </div>
       )}
