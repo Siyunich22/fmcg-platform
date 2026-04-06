@@ -25,7 +25,19 @@ async def get_cash_flow_summary(
     period_date: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return total cash received per branch for the given period."""
+    """Return total cash received per branch. Without period_date uses the latest period."""
+    # If no period given — use the latest one in DB
+    if not period_date:
+        latest = await db.execute(
+            select(CashFlowEntry.period_date)
+            .order_by(CashFlowEntry.period_date.desc())
+            .limit(1)
+        )
+        period_date = str(latest.scalar_one_or_none() or "")
+
+    if not period_date:
+        return []
+
     q = (
         select(
             CashFlowEntry.branch_code,
@@ -33,12 +45,10 @@ async def get_cash_flow_summary(
             func.sum(CashFlowEntry.amount).label("total_amount"),
             func.count(CashFlowEntry.id).label("tx_count"),
         )
+        .where(CashFlowEntry.period_date == period_date)
         .group_by(CashFlowEntry.branch_code, CashFlowEntry.branch_name)
         .order_by(func.sum(CashFlowEntry.amount).desc())
     )
-
-    if period_date:
-        q = q.where(CashFlowEntry.period_date == period_date)
 
     result = await db.execute(q)
     rows = result.all()

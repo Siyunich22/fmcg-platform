@@ -10,7 +10,7 @@ import {
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
   useSalesReportStats, useClearSalesReport,
   useTmzSummary, useOsvDates, useOsvByBranch,
-  useCashFlowDates, useCashFlowSummary, useUploadCashFlow,
+  useCashFlowSummary, useUploadCashFlow,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
   type TmzSummaryRow, type OsvByBranchRow, type CashFlowSummaryRow,
 } from "@/hooks/useApi";
@@ -1226,8 +1226,7 @@ export default function SalesPage() {
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
-  const { data: cashFlowDates = [] } = useCashFlowDates();
-  const { data: cashFlow = [] } = useCashFlowSummary(cashFlowDates[0]);
+  const { data: cashFlow = [] } = useCashFlowSummary();
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
@@ -1295,8 +1294,8 @@ export default function SalesPage() {
         </div>
       )}
 
-      {/* KPI strip */}
-      {!isEmpty && (
+      {/* KPI strip — показывается когда есть хоть какие-то данные */}
+      {(!isEmpty || cashFlowTotal > 0) && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
@@ -1320,8 +1319,8 @@ export default function SalesPage() {
           </div>
           <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-500">Поступления</div>
-            <div className="text-xl font-black text-teal-700">{fmt(cashFlowTotal)}</div>
-            <div className="text-[11px] text-teal-400">{cashFlow.length} филиалов</div>
+            <div className="text-xl font-black text-teal-700">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</div>
+            <div className="text-[11px] text-teal-400">{cashFlow.length > 0 ? `${cashFlow.length} филиалов` : "нет данных"}</div>
           </div>
         </div>
       )}

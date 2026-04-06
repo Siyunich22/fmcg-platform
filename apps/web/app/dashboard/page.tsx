@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   useSalesReportDates, useSalesReportTotals, useSalesReportSummary,
   useOsvDates, useOsvByBranch, useTmzSummary, useTmzDates,
-  useCashFlowDates, useCashFlowSummary,
+  useCashFlowSummary,
 } from "@/hooks/useApi";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -101,8 +101,7 @@ export default function DashboardPage() {
   const { data: tmzSummary = [] } = useTmzSummary(tmzDate);
 
   // ── Cash flow data ─────────────────────────────────────────────────────────
-  const { data: cashFlowDates = [] } = useCashFlowDates();
-  const { data: cashFlow = [] } = useCashFlowSummary(cashFlowDates[0]);
+  const { data: cashFlow = [] } = useCashFlowSummary();
 
   // ── Computed KPIs ──────────────────────────────────────────────────────
   const salesTotal = totals.reduce((s, t) => s + t.amount, 0);

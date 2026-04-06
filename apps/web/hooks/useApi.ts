@@ -538,6 +538,8 @@ export const useCashFlowSummary = (periodDate?: string) =>
     queryKey: ["cash-flow-summary", periodDate],
     queryFn: () =>
       api.get("/api/cash-flow/summary", { params: { period_date: periodDate } }).then((r) => r.data),
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
 export const useUploadCashFlow = () => {
