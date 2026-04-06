@@ -15,6 +15,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
+import xlrd
 
 TRANSFER_KEYWORD = "Перевод ДС в головное подразделение"
 
@@ -89,20 +90,56 @@ def _extract_branch(cell_val: str) -> tuple[str, str]:
     return "UNKNOWN", "UNKNOWN"
 
 
+def _iter_rows_openpyxl(filepath: str):
+    """Yield rows as lists of values using openpyxl (for .xlsx)."""
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb.active
+    for row in ws.iter_rows(values_only=True):
+        yield list(row)
+    wb.close()
+
+
+def _iter_rows_xlrd(filepath: str):
+    """Yield rows as lists of values using xlrd (for .xls)."""
+    wb = xlrd.open_workbook(filepath)
+    ws = wb.sheet_by_index(0)
+    for r in range(ws.nrows):
+        cells = []
+        for c in range(ws.ncols):
+            cell = ws.cell(r, c)
+            # xlrd type 3 = date
+            if cell.ctype == xlrd.XL_CELL_DATE:
+                try:
+                    dt_tuple = xlrd.xldate_as_tuple(cell.value, wb.datemode)
+                    cells.append(datetime(*dt_tuple[:6]).date() if dt_tuple[3:] == (0, 0, 0) else datetime(*dt_tuple[:6]))
+                except Exception:
+                    cells.append(cell.value)
+            elif cell.ctype == xlrd.XL_CELL_TEXT:
+                cells.append(cell.value.strip())
+            elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                cells.append(cell.value)
+            else:
+                cells.append(None)
+        yield cells
+
+
 def parse_cash_flow_file(filepath: str) -> list[dict]:
     """
-    Parse Карточка счета 1000 Excel file.
+    Parse Карточка счета 1000 Excel file (.xls or .xlsx).
     Returns list of dicts:
       transaction_date, branch_name, branch_code, amount, period_date
     """
-    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
-    ws = wb.active
-    period_date = _extract_period_date(Path(filepath).name)
+    path = Path(filepath)
+    period_date = _extract_period_date(path.name)
+
+    if path.suffix.lower() == ".xlsx":
+        row_iter = _iter_rows_openpyxl(filepath)
+    else:
+        row_iter = _iter_rows_xlrd(filepath)
+
     entries: list[dict] = []
 
-    for row in ws.iter_rows(values_only=True):
-        # Convert row to list for safe indexing
-        cells = list(row)
+    for cells in row_iter:
         if len(cells) < 5:
             continue
 
@@ -134,13 +171,13 @@ def parse_cash_flow_file(filepath: str) -> list[dict]:
                 branch_name, branch_code = _extract_branch(cv)
                 break
 
-        # Amount: look for the largest positive numeric value from col 5 onwards
+        # Amount: first positive numeric value from col 5 onwards
         amount = 0.0
         for ci in range(5, len(cells)):
             v = _parse_amount(cells[ci])
             if v > 0:
                 amount = v
-                break  # take first positive amount found after context cols
+                break
 
         if amount <= 0:
             continue
@@ -153,5 +190,4 @@ def parse_cash_flow_file(filepath: str) -> list[dict]:
             "period_date": period_date,
         })
 
-    wb.close()
     return entries
