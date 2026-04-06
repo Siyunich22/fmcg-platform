@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from db import get_db
-from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry, TmzEntry, SalesReportEntry
+from models.models import Upload, Sale, Stock, Debt, Nomenclature, Branch, UploadType, OsvEntry, TmzEntry, SalesReportEntry, CashFlowEntry
 from services.parser_sales import parse_sales_file, detect_category, detect_subcategory, is_group_node
 from services.parser_stock import parse_stock_file, _extract_date_from_filename as _stock_date_from_name
 from services.parser_osv import parse_osv_folder
@@ -608,6 +608,61 @@ async def upload_sales_report(
         "rows": len(entries),
         "branches": branches,
         "period_dates": [str(d) for d in sorted(period_dates)],
+    }
+
+
+@router.post("/cash-flow")
+async def upload_cash_flow(
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload Карточка счета 1000 Excel files and extract branch transfers to HQ."""
+    from services.parser_cash_flow import parse_cash_flow_file
+
+    all_entries: list[dict] = []
+    errors: list[str] = []
+
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith((".xls", ".xlsx")):
+            errors.append(f"{file.filename}: неподдерживаемый формат")
+            continue
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / file.filename
+        try:
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            entries = parse_cash_flow_file(str(tmp_path))
+            all_entries.extend(entries)
+        except Exception as e:
+            errors.append(f"{file.filename}: {e}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not all_entries and not errors:
+        raise HTTPException(422, "Файл не содержит строк с переводами ДС")
+    if not all_entries:
+        raise HTTPException(422, f"Ошибки: {'; '.join(errors)}")
+
+    period_dates = {e["period_date"] for e in all_entries}
+
+    try:
+        for pd in period_dates:
+            await db.execute(delete(CashFlowEntry).where(CashFlowEntry.period_date == pd))
+        for e in all_entries:
+            db.add(CashFlowEntry(**e))
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(500, f"Ошибка сохранения: {exc}") from exc
+
+    branches = sorted({e["branch_code"] for e in all_entries})
+    return {
+        "ok": True,
+        "rows": len(all_entries),
+        "branches": branches,
+        "period_dates": [str(d) for d in sorted(period_dates)],
+        "errors": errors,
     }
 
 

@@ -10,8 +10,9 @@ import {
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
   useSalesReportStats, useClearSalesReport,
   useTmzSummary, useOsvDates, useOsvByBranch,
+  useCashFlowDates, useCashFlowSummary, useUploadCashFlow,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
-  type TmzSummaryRow, type OsvByBranchRow,
+  type TmzSummaryRow, type OsvByBranchRow, type CashFlowSummaryRow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
@@ -205,6 +206,82 @@ function UploadBlock({ onDone, selectedDate }: { onDone: () => void; selectedDat
   );
 }
 
+// ── Cash flow upload block ────────────────────────────────────────────────────
+function CashFlowUploadBlock() {
+  const upload = useUploadCashFlow();
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [result, setResult] = useState<{ rows: number; branches: string[]; period_dates: string[] } | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const onDrop = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    setState("loading");
+    try {
+      const res = await upload.mutateAsync(files);
+      setResult({ rows: res.rows, branches: res.branches, period_dates: res.period_dates });
+      setState("success");
+    } catch (e: unknown) {
+      setMsg(e instanceof Error ? e.message : "Ошибка загрузки");
+      setState("error");
+    }
+  }, [upload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop, multiple: true, disabled: state === "loading",
+    accept: { "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+  });
+
+  return (
+    <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-4 space-y-2">
+      <div className="text-[10px] font-semibold text-teal-600 uppercase tracking-wide">
+        Поступления ДС — Карточка счета 1000
+      </div>
+      <div {...getRootProps()} className={cn(
+        "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-all",
+        isDragActive ? "border-teal-500 bg-teal-100"
+          : state === "success" ? "border-green-400 bg-green-50"
+          : state === "error" ? "border-red-300 bg-red-50"
+          : "border-teal-200 bg-white hover:border-teal-400 hover:bg-teal-50"
+      )}>
+        <input {...getInputProps()} />
+        {state === "loading" && (
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+            <Loader2 size={14} className="animate-spin text-teal-500" />Обрабатываем...
+          </div>
+        )}
+        {state === "success" && result && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-center gap-2 text-sm text-green-700 font-semibold">
+              <CheckCircle size={14} />Загружено {result.rows} переводов за {result.period_dates.join(", ")}
+            </div>
+            <div className="text-xs text-teal-600">Филиалы: {result.branches.join(", ")}</div>
+            <button className="text-xs text-blue-600 underline" onClick={e => { e.stopPropagation(); setState("idle"); }}>
+              Загрузить ещё
+            </button>
+          </div>
+        )}
+        {state === "error" && (
+          <div className="flex items-center justify-center gap-2 text-sm text-red-600">
+            <XCircle size={14} />{msg}
+            <button className="text-xs text-blue-600 underline ml-1" onClick={e => { e.stopPropagation(); setState("idle"); }}>
+              Повторить
+            </button>
+          </div>
+        )}
+        {state === "idle" && (
+          <div className="flex items-center justify-center gap-2 text-sm text-teal-600">
+            <Upload size={13} />
+            {isDragActive ? "Отпустите файлы" : "Перетащите Карточку счета 1000 или нажмите"}
+          </div>
+        )}
+      </div>
+      <div className="text-[10px] text-teal-500 leading-relaxed">
+        Файл из 1С: Банк и касса → Касса → Карточка счета 1000. Система найдёт строки «Перевод ДС в головное подразделение».
+      </div>
+    </div>
+  );
+}
+
 // ── Product modal ─────────────────────────────────────────────────────────────
 function ProductModal({ product, allRows, bonusRows, onClose }: {
   product: SalesReportRow; allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; onClose: () => void;
@@ -291,15 +368,19 @@ function PieTip({ active, payload }: { active?: boolean; payload?: { name: strin
 }
 
 // ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
-function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal }: {
+function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal, cashFlow }: {
   salesTree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
+  cashFlow: CashFlowSummaryRow[];
 }) {
+  const cashByCode = useMemo(() => Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount])), [cashFlow]);
+
   const branchData = useMemo(() =>
     [...totals].sort((a, b) => b.amount - a.amount).map((t) => ({
       name: t.branch_name, amount: t.amount, qty: t.qty,
+      cashflow: cashByCode[t.branch_code] ?? 0,
       share: grandTotal > 0 ? (t.amount / grandTotal * 100).toFixed(1) : "0",
     })),
-    [totals, grandTotal]);
+    [totals, grandTotal, cashByCode]);
 
   const catData = useMemo(() => {
     const top = salesTree.slice(0, 8).map(n => ({
@@ -321,14 +402,17 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
             <span className="text-sm font-bold text-gray-800">Продажи по филиалам</span>
           </div>
           {branchData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={Math.max(160, branchData.length * 46)}>
+            <ResponsiveContainer width="100%" height={Math.max(160, branchData.length * 52)}>
               <BarChart data={branchData} layout="vertical" margin={{ left: 0, right: 56, top: 4, bottom: 4 }}>
                 <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={76} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTip />} />
-                <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={30}>
+                <Tooltip
+                  formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : "Поступления"]}
+                />
+                <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={18}>
                   {branchData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                 </Bar>
+                <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={18} fill="#10b981" opacity={0.75} />
               </BarChart>
             </ResponsiveContainer>
           ) : <div className="h-40 flex items-center justify-center text-gray-300 text-sm">Нет данных</div>}
@@ -381,14 +465,15 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
 }
 
 // ── TAB 2: Филиалы ────────────────────────────────────────────────────────────
-function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows, debtByBranch }: {
+function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows, debtByBranch, cashFlow }: {
   totals: SalesReportTotal[]; grandTotal: number; tree: PivotNode[]; tmzSummary: TmzSummaryRow[];
-  allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; debtByBranch: OsvByBranchRow[];
+  allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; debtByBranch: OsvByBranchRow[]; cashFlow: CashFlowSummaryRow[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const sorted = useMemo(() => [...totals].sort((a, b) => b.amount - a.amount), [totals]);
   const tmzByCode = useMemo(() => Object.fromEntries(tmzSummary.map(r => [r.branch_code, r])), [tmzSummary]);
   const debtByName = useMemo(() => Object.fromEntries(debtByBranch.map(r => [r.branch_name, r])), [debtByBranch]);
+  const cashByCode = useMemo(() => Object.fromEntries(cashFlow.map(r => [r.branch_code, r])), [cashFlow]);
 
   const topProductsByBranch = useMemo(() => {
     const result: Record<string, { name: string; amount: number; qty: number }[]> = {};
@@ -424,6 +509,7 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
           const share = grandTotal > 0 ? t.amount / grandTotal * 100 : 0;
           const tmz = tmzByCode[t.branch_code];
           const debt = debtByName[t.branch_name];
+          const cash = cashByCode[t.branch_code];
           const topProducts = topProductsByBranch[t.branch_code] ?? [];
           const isSel = selected === t.branch_code;
           const color = C[i % C.length];
@@ -451,18 +537,24 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
                   <span className="text-[10px] text-gray-500 font-semibold w-9 text-right flex-shrink-0">{share.toFixed(1)}%</span>
                 </div>
               </div>
-              {/* Debt + TMZ */}
-              <div className="grid grid-cols-2 border-t border-b border-gray-100">
-                <div className="px-4 py-2.5 border-r border-gray-100">
+              {/* Debt + TMZ + Cash */}
+              <div className="grid grid-cols-3 border-t border-b border-gray-100">
+                <div className="px-3 py-2.5 border-r border-gray-100">
                   <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Дебиторка</div>
                   {debt
                     ? <div className={cn("text-xs font-bold tabular-nums", debt.total_net > 0 ? "text-orange-600" : "text-gray-500")}>{fmt(debt.total_net)}</div>
                     : <div className="text-xs text-gray-300">—</div>}
                 </div>
-                <div className="px-4 py-2.5">
-                  <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">ТМЗ остаток</div>
+                <div className="px-3 py-2.5 border-r border-gray-100">
+                  <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">ТМЗ</div>
                   {tmz
                     ? <><div className="text-xs font-bold text-emerald-600 tabular-nums">{fmt(tmz.total_amount)}</div><div className="text-[9px] text-gray-400">{tmz.sku_count.toLocaleString("ru")} SKU</div></>
+                    : <div className="text-xs text-gray-300">—</div>}
+                </div>
+                <div className="px-3 py-2.5">
+                  <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Поступления</div>
+                  {cash
+                    ? <div className="text-xs font-bold text-teal-600 tabular-nums">{fmt(cash.total_amount)}</div>
                     : <div className="text-xs text-gray-300">—</div>}
                 </div>
               </div>
@@ -1134,6 +1226,8 @@ export default function SalesPage() {
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
+  const { data: cashFlowDates = [] } = useCashFlowDates();
+  const { data: cashFlow = [] } = useCashFlowSummary(cashFlowDates[0]);
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
@@ -1167,6 +1261,7 @@ export default function SalesPage() {
   const bonusGrandQty = bonusSummary.reduce((s, r) => s + r.qty, 0);
   const combinedGrandTotal = combinedTotals.reduce((s, t) => s + t.amount, 0);
   const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
+  const cashFlowTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
   const isEmpty = !isLoading && summary.length === 0 && bonusSummary.length === 0;
 
   return (
@@ -1190,11 +1285,19 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {showUpload && <UploadBlock onDone={() => setShowUpload(false)} selectedDate={selectedDate} />}
+      {showUpload && (
+        <div className="space-y-3">
+          <UploadBlock onDone={() => setShowUpload(false)} selectedDate={selectedDate} />
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5 px-1">Поступления ДС (Карточка счета 1000)</div>
+            <CashFlowUploadBlock />
+          </div>
+        </div>
+      )}
 
       {/* KPI strip */}
       {!isEmpty && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
             <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
@@ -1214,6 +1317,11 @@ export default function SalesPage() {
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
             <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
             <div className="text-[11px] text-gray-400">{tmzSummary.reduce((s, r) => s + r.sku_count, 0).toLocaleString("ru")} SKU</div>
+          </div>
+          <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-500">Поступления</div>
+            <div className="text-xl font-black text-teal-700">{fmt(cashFlowTotal)}</div>
+            <div className="text-[11px] text-teal-400">{cashFlow.length} филиалов</div>
           </div>
         </div>
       )}
@@ -1247,9 +1355,9 @@ export default function SalesPage() {
           </div>
         </div>
       ) : activeTab === "overview" ? (
-        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} />
+        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} cashFlow={cashFlow} />
       ) : activeTab === "branches" ? (
-        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} />
+        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} cashFlow={cashFlow} />
       ) : activeTab === "categories" ? (
         <CategoriesTab tree={tree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />

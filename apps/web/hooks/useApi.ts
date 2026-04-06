@@ -517,6 +517,49 @@ export const useUploadSalesReport = () => {
   });
 };
 
+// ── Cash Flow hooks ──────────────────────────────────────────────────────────
+
+export interface CashFlowSummaryRow {
+  branch_code: string;
+  branch_name: string;
+  total_amount: number;
+  tx_count: number;
+  share: number;
+}
+
+export const useCashFlowDates = () =>
+  useQuery<string[]>({
+    queryKey: ["cash-flow-dates"],
+    queryFn: () => api.get("/api/cash-flow/dates").then((r) => r.data),
+  });
+
+export const useCashFlowSummary = (periodDate?: string) =>
+  useQuery<CashFlowSummaryRow[]>({
+    queryKey: ["cash-flow-summary", periodDate],
+    queryFn: () =>
+      api.get("/api/cash-flow/summary", { params: { period_date: periodDate } }).then((r) => r.data),
+  });
+
+export const useUploadCashFlow = () => {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean; rows: number; branches: string[]; period_dates: string[]; errors: string[] },
+    Error,
+    File[]
+  >({
+    mutationFn: async (files: File[]) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      const res = await api.post("/api/upload/cash-flow", form);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cash-flow-summary"] });
+      qc.invalidateQueries({ queryKey: ["cash-flow-dates"] });
+    },
+  });
+};
+
 export const useUploadStock = () => {
   const qc = useQueryClient();
   return useMutation<UploadResponse, Error, File>({

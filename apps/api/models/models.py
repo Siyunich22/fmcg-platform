@@ -207,6 +207,17 @@ class SalesReportEntry(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CashFlowEntry(Base):
+    __tablename__ = "cash_flow_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_date = Column(Date, nullable=False)
+    branch_name = Column(String(100), nullable=False)
+    branch_code = Column(String(20), nullable=False)
+    amount = Column(Numeric(18, 2), default=0)
+    period_date = Column(Date, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

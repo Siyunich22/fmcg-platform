@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   useSalesReportDates, useSalesReportTotals, useSalesReportSummary,
   useOsvDates, useOsvByBranch, useTmzSummary, useTmzDates,
-  type SalesReportTotal, type SalesReportSummaryRow, type OsvByBranchRow, type TmzSummaryRow,
+  useCashFlowDates, useCashFlowSummary,
 } from "@/hooks/useApi";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -100,6 +100,10 @@ export default function DashboardPage() {
   // ── TMZ data ───────────────────────────────────────────────────────────
   const { data: tmzSummary = [] } = useTmzSummary(tmzDate);
 
+  // ── Cash flow data ─────────────────────────────────────────────────────────
+  const { data: cashFlowDates = [] } = useCashFlowDates();
+  const { data: cashFlow = [] } = useCashFlowSummary(cashFlowDates[0]);
+
   // ── Computed KPIs ──────────────────────────────────────────────────────
   const salesTotal = totals.reduce((s, t) => s + t.amount, 0);
   const salesQty = totals.reduce((s, t) => s + t.qty, 0);
@@ -111,14 +115,15 @@ export default function DashboardPage() {
 
   // ── Branch chart data ──────────────────────────────────────────────────
   const branchChartData = useMemo(() => {
-    const map = new Map<string, { name: string; amount: number }>();
+    const cashByCode = Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount]));
+    const map = new Map<string, { name: string; amount: number; cashflow: number }>();
     for (const r of [...summary, ...bonusSummary]) {
       if (!map.has(r.branch_code))
-        map.set(r.branch_code, { name: r.branch_name, amount: 0 });
+        map.set(r.branch_code, { name: r.branch_name, amount: 0, cashflow: cashByCode[r.branch_code] ?? 0 });
       map.get(r.branch_code)!.amount += r.amount;
     }
     return [...map.values()].sort((a, b) => b.amount - a.amount);
-  }, [summary, bonusSummary]);
+  }, [summary, bonusSummary, cashFlow]);
 
   // ── Category pie data ──────────────────────────────────────────────────
   const catData = useMemo(() => {
@@ -256,7 +261,7 @@ export default function DashboardPage() {
                 </Link>
               </div>
               {branchChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={Math.max(260, branchChartData.length * 52)}>
                   <BarChart
                     data={branchChartData}
                     layout="vertical"
@@ -264,10 +269,13 @@ export default function DashboardPage() {
                   >
                     <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={84} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTip />} />
-                    <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                    <Tooltip
+                      formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : "Поступления"]}
+                    />
+                    <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={18}>
                       {branchChartData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                     </Bar>
+                    <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={18} fill="#10b981" opacity={0.75} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (

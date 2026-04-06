@@ -5,12 +5,12 @@ import {
   useUploadSales, useUploadStock, useUploadHistory, useDeleteUpload,
   useFolderConfig, useSaveFolderConfig, useSyncFromFolder,
   useOsvFolderConfig, useSaveOsvFolderConfig, useScanOsvFolder, useUploadOsvFiles,
-  useUploadTmzFiles,
+  useUploadTmzFiles, useUploadCashFlow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle, XCircle, Loader2, FileSpreadsheet, Clock,
-  TrendingUp, Package, ArrowRight, Trash2, FolderOpen, RefreshCw, Settings,
+  TrendingUp, Package, ArrowRight, Trash2, FolderOpen, RefreshCw, Settings, Banknote,
 } from "lucide-react";
 import Link from "next/link";
 import type { UploadResponse } from "@/types";
@@ -384,6 +384,133 @@ function OsvUploadBlock() {
   );
 }
 
+function CashFlowUploadBlock() {
+  const upload = useUploadCashFlow();
+  const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [result, setResult] = useState<{
+    rows: number; branches: string[]; period_dates: string[]; errors: string[];
+  } | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const onDrop = useCallback(async (accepted: File[]) => {
+    if (!accepted.length) return;
+    setState("loading");
+    setResult(null);
+    setErrorMsg("");
+    try {
+      const res = await upload.mutateAsync(accepted);
+      setResult(res);
+      setState("success");
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "Ошибка загрузки");
+      setState("error");
+    }
+  }, [upload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    },
+    multiple: true,
+    disabled: state === "loading",
+  });
+
+  return (
+    <div className="bg-white border border-teal-200 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-teal-100 flex items-center gap-2 bg-teal-50/40">
+        <Banknote size={14} className="text-teal-600" />
+        <span className="text-sm font-bold text-gray-900">Загрузка поступлений ДС</span>
+        <span className="text-xs text-gray-400 ml-1">— Карточка счета 1000</span>
+      </div>
+      <div className="p-5 space-y-4">
+        {/* Dropzone */}
+        <div
+          {...getRootProps()}
+          className={cn(
+            "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
+            isDragActive ? "border-teal-500 bg-teal-50"
+              : state === "success" ? "border-green-400 bg-green-50"
+              : state === "error" ? "border-red-300 bg-red-50"
+              : "border-gray-200 bg-white hover:border-teal-300 hover:bg-teal-50/30"
+          )}
+        >
+          <input {...getInputProps()} />
+
+          {state === "loading" ? (
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 size={28} className="text-teal-500 animate-spin" />
+              <div className="text-sm font-medium text-gray-600">Обрабатываем файл...</div>
+              <div className="text-xs text-gray-400">Ищем переводы ДС в головное подразделение</div>
+            </div>
+          ) : state === "success" && result ? (
+            <div className="flex flex-col items-center gap-3">
+              <CheckCircle size={28} className="text-green-500" />
+              <div className="text-sm font-bold text-green-700">Загружено успешно</div>
+              <div className="flex flex-wrap justify-center gap-3 text-xs text-gray-600">
+                <span className="bg-white border border-green-200 rounded-lg px-3 py-1.5">
+                  <span className="font-black text-green-700 text-base mr-1">{result.rows}</span>
+                  переводов
+                </span>
+                <span className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 font-mono">
+                  {result.period_dates.join(", ")}
+                </span>
+              </div>
+              <div className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-1.5">
+                Филиалы: {result.branches.join(", ")}
+              </div>
+              {result.errors?.length > 0 && (
+                <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                  ⚠ {result.errors[0]}
+                </div>
+              )}
+              <button
+                className="text-xs text-gray-400 hover:text-gray-600 mt-1"
+                onClick={(e) => { e.stopPropagation(); setState("idle"); }}
+              >
+                Загрузить ещё
+              </button>
+            </div>
+          ) : state === "error" ? (
+            <div className="flex flex-col items-center gap-3">
+              <XCircle size={28} className="text-red-500" />
+              <div className="text-sm font-bold text-red-600">Ошибка загрузки</div>
+              <div className="text-xs text-red-500 max-w-xs">{errorMsg}</div>
+              <button
+                className="mt-1 text-xs text-blue-700 hover:underline"
+                onClick={(e) => { e.stopPropagation(); setState("idle"); }}
+              >
+                Попробовать снова
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center">
+                <Banknote size={22} className="text-teal-400" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-700">
+                  {isDragActive ? "Отпустите файлы" : "Перетащите файлы или кликните"}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">Можно выбрать несколько файлов сразу</div>
+                <div className="text-xs text-gray-300 mt-1 font-mono">Карточка счета 1000 Астана 31.03.26.xlsx</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Hint */}
+        <div className="bg-teal-50 border border-teal-100 rounded-lg px-4 py-3 text-xs text-teal-700 space-y-1">
+          <div className="font-semibold">Какой файл загружать?</div>
+          <div>В 1С: <span className="font-mono bg-white px-1 rounded">Банк и касса → Касса → Карточка счета</span>, счет <span className="font-mono bg-white px-1 rounded">1000</span>, период — нужный месяц.</div>
+          <div>Система автоматически найдёт строки <span className="font-mono bg-white px-1 rounded">«Перевод ДС в головное подразделение»</span> и сгруппирует по филиалам.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OsvSyncBlock() {
   const { data: cfg, isLoading } = useOsvFolderConfig();
   const saveConfig = useSaveOsvFolderConfig();
@@ -526,6 +653,9 @@ export default function UploadPage() {
 
       {/* OSV sync block (local folder - for desktop use) */}
       <OsvSyncBlock />
+
+      {/* Cash flow upload */}
+      <CashFlowUploadBlock />
 
       {/* Upload zones */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
