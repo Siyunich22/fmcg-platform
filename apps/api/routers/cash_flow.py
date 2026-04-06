@@ -11,6 +11,21 @@ from models.models import CashFlowEntry
 router = APIRouter()
 
 
+@router.get("/count")
+async def get_cash_flow_count(db: AsyncSession = Depends(get_db)):
+    """Debug: return total row count and distinct period dates."""
+    total = await db.execute(select(func.count(CashFlowEntry.id)))
+    dates_result = await db.execute(
+        select(CashFlowEntry.period_date, func.count(CashFlowEntry.id))
+        .group_by(CashFlowEntry.period_date)
+        .order_by(CashFlowEntry.period_date.desc())
+    )
+    return {
+        "total_rows": total.scalar_one(),
+        "by_period": [{"period_date": str(r[0]), "rows": r[1]} for r in dates_result.all()],
+    }
+
+
 @router.get("/dates")
 async def get_cash_flow_dates(db: AsyncSession = Depends(get_db)):
     """Return distinct period dates, newest first."""

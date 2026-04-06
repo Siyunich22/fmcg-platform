@@ -552,12 +552,17 @@ export const useUploadCashFlow = () => {
     mutationFn: async (files: File[]) => {
       const form = new FormData();
       files.forEach((f) => form.append("files", f));
-      const res = await api.post("/api/upload/cash-flow", form);
-      return res.data;
+      try {
+        const res = await api.post("/api/upload/cash-flow", form);
+        return res.data;
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        throw new Error(detail ?? (err instanceof Error ? err.message : "Ошибка загрузки"));
+      }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cash-flow-summary"] });
-      qc.invalidateQueries({ queryKey: ["cash-flow-dates"] });
+      qc.refetchQueries({ queryKey: ["cash-flow-summary"] });
+      qc.refetchQueries({ queryKey: ["cash-flow-dates"] });
     },
   });
 };
