@@ -1,4 +1,6 @@
 """Router for cash flow data (Карточка счета 1000)."""
+from datetime import date as date_type
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -27,15 +29,22 @@ async def get_cash_flow_summary(
 ):
     """Return total cash received per branch. Without period_date uses the latest period."""
     # If no period given — use the latest one in DB
-    if not period_date:
+    # Resolve period_date: use given value or auto-pick latest
+    resolved: date_type | None = None
+    if period_date:
+        try:
+            resolved = date_type.fromisoformat(period_date)
+        except ValueError:
+            pass
+    if resolved is None:
         latest = await db.execute(
             select(CashFlowEntry.period_date)
             .order_by(CashFlowEntry.period_date.desc())
             .limit(1)
         )
-        period_date = str(latest.scalar_one_or_none() or "")
+        resolved = latest.scalar_one_or_none()
 
-    if not period_date:
+    if resolved is None:
         return []
 
     q = (
@@ -45,7 +54,7 @@ async def get_cash_flow_summary(
             func.sum(CashFlowEntry.amount).label("total_amount"),
             func.count(CashFlowEntry.id).label("tx_count"),
         )
-        .where(CashFlowEntry.period_date == period_date)
+        .where(CashFlowEntry.period_date == resolved)
         .group_by(CashFlowEntry.branch_code, CashFlowEntry.branch_name)
         .order_by(func.sum(CashFlowEntry.amount).desc())
     )
