@@ -11,6 +11,22 @@ from models.models import CashFlowEntry
 router = APIRouter()
 
 
+@router.delete("/period/{period_date}")
+async def delete_cash_flow_period(period_date: str, db: AsyncSession = Depends(get_db)):
+    """Delete all cash flow entries for a given period (YYYY-MM-DD)."""
+    from sqlalchemy import delete as sa_delete
+    try:
+        pd = date_type.fromisoformat(period_date)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(400, "Invalid date format, use YYYY-MM-DD")
+    result = await db.execute(
+        sa_delete(CashFlowEntry).where(CashFlowEntry.period_date == pd)
+    )
+    await db.commit()
+    return {"deleted": result.rowcount, "period_date": period_date}
+
+
 @router.get("/count")
 async def get_cash_flow_count(db: AsyncSession = Depends(get_db)):
     """Debug: return total row count and distinct period dates."""

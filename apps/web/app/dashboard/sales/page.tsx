@@ -1226,7 +1226,7 @@ export default function SalesPage() {
   const { data: tmzSummary = [] } = useTmzSummary(selectedDate ? selectedDate.substring(0, 7) + "-31" : undefined);
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
-  const { data: cashFlow = [], isError: cashFlowError, error: cashFlowErr } = useCashFlowSummary();
+  const { data: cashFlow = [], isError: cashFlowError, error: cashFlowErr } = useCashFlowSummary(selectedDate || undefined);
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
