@@ -383,11 +383,15 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
     [totals, grandTotal, cashByCode]);
 
   const catData = useMemo(() => {
-    const top = salesTree.slice(0, 8).map(n => ({
-      name: n.label.length > 14 ? n.label.slice(0, 14) + "…" : n.label,
+    // salesTree level 0 = cat1 (brand), level 1 children = cat2 (product type)
+    // Flatten all cat2 nodes across all cat1 parents for a meaningful pie
+    const cat2Nodes = salesTree.flatMap(n => n.children.length > 0 ? n.children : [n]);
+    const sorted = [...cat2Nodes].sort((a, b) => b.total.amount - a.total.amount);
+    const top = sorted.slice(0, 7).map(n => ({
+      name: n.label.length > 16 ? n.label.slice(0, 16) + "…" : n.label,
       value: n.total.amount,
     }));
-    const rest = salesTree.slice(8).reduce((s, n) => s + n.total.amount, 0);
+    const rest = sorted.slice(7).reduce((s, n) => s + n.total.amount, 0);
     if (rest > 0) top.push({ name: "Прочее", value: rest });
     return top;
   }, [salesTree]);
