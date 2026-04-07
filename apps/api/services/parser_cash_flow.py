@@ -32,7 +32,8 @@ BRANCH_MAP: dict[str, str] = {
     "АКТАУ":     "AKTAU",
     "КОКШЕТАУ":  "KOKSHETAU",
     "СЕМЕЙ":     "SEMEY",
-    "КАРАГАНДA": "KARAGANDA",
+    "КАРАГАНДA": "KARAGANDA",   # Latin A at end (some exports)
+    "КАРАГАНДА": "KARAGANDA",   # All Cyrillic (confirmed from file)
     "ШЫМКЕНТ":   "SHYMKENT",
     "КОСТАНАЙ":  "KOSTANAY",
     "ПАВЛОДАР":  "PAVLODAR",
