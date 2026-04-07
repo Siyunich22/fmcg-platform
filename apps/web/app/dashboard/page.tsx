@@ -129,13 +129,18 @@ export default function DashboardPage() {
   const catData = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of [...summary, ...bonusSummary]) {
-      const k = r.cat1 ?? "Прочее";
+      // cat2 = product type ("Масло 500 мл"), cat1 = brand — use cat2 for meaningful slices
+      const k = r.cat2 ?? r.cat1 ?? "Прочее";
       map.set(k, (map.get(k) ?? 0) + r.amount);
     }
-    return [...map.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, value]) => ({ name: name.length > 14 ? name.slice(0, 14) + "…" : name, value }));
+    const entries = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    const top7 = entries.slice(0, 7);
+    const restSum = entries.slice(7).reduce((s, [, v]) => s + v, 0);
+    if (restSum > 0) top7.push(["Прочее", restSum]);
+    return top7.map(([name, value]) => ({
+      name: name.length > 16 ? name.slice(0, 16) + "…" : name,
+      value,
+    }));
   }, [summary, bonusSummary]);
 
   // ── Per-branch aggregated table ────────────────────────────────────────
@@ -300,17 +305,17 @@ export default function DashboardPage() {
                 </div>
               </div>
               {catData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={280}>
                   <PieChart>
                     <Pie
                       data={catData}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
-                      cy="45%"
-                      outerRadius={85}
-                      innerRadius={40}
-                      label={({ name, percent }) => percent > 0.05 ? `${name} ${(percent * 100).toFixed(0)}%` : ""}
+                      cy="44%"
+                      outerRadius={88}
+                      innerRadius={44}
+                      label={({ name, percent }) => percent > 0.04 ? `${name} ${(percent * 100).toFixed(0)}%` : ""}
                       labelLine={false}
                       fontSize={10}
                     >
