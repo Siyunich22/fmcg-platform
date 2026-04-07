@@ -179,7 +179,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <h1 className="text-base font-bold text-gray-900">{pageTitle}</h1>
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden sm:block text-xs font-mono text-gray-400 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded">
-              26.03.2026
+              {new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })}
             </span>
           </div>
         </header>
