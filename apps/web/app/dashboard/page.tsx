@@ -101,7 +101,7 @@ export default function DashboardPage() {
   const { data: tmzSummary = [] } = useTmzSummary(tmzDate);
 
   // ── Cash flow data ─────────────────────────────────────────────────────────
-  const { data: cashFlow = [] } = useCashFlowSummary();
+  const { data: cashFlow = [] } = useCashFlowSummary(salesDate || undefined);
 
   // ── Computed KPIs ──────────────────────────────────────────────────────
   const salesTotal = totals.reduce((s, t) => s + t.amount, 0);
@@ -111,10 +111,11 @@ export default function DashboardPage() {
   const combinedTotal = salesTotal + bonusTotal;
   const debtTotal = debtByBranch.reduce((s, r) => s + r.total_net, 0);
   const tmzTotal = tmzSummary.reduce((s, r) => s + r.total_amount, 0);
+  const cashFlowTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
+  const cashByCode = Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount]));
 
   // ── Branch chart data ──────────────────────────────────────────────────
   const branchChartData = useMemo(() => {
-    const cashByCode = Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount]));
     const map = new Map<string, { name: string; amount: number; cashflow: number }>();
     for (const r of [...summary, ...bonusSummary]) {
       if (!map.has(r.branch_code))
@@ -122,7 +123,7 @@ export default function DashboardPage() {
       map.get(r.branch_code)!.amount += r.amount;
     }
     return [...map.values()].sort((a, b) => b.amount - a.amount);
-  }, [summary, bonusSummary, cashFlow]);
+  }, [summary, bonusSummary, cashByCode]);
 
   // ── Category pie data ──────────────────────────────────────────────────
   const catData = useMemo(() => {
@@ -142,12 +143,12 @@ export default function DashboardPage() {
     const map = new Map<string, {
       code: string; name: string;
       salesAmt: number; salesQty: number;
-      debt: number; tmzAmt: number;
+      debt: number; tmzAmt: number; cashflow: number;
     }>();
 
     for (const r of [...summary, ...bonusSummary]) {
       if (!map.has(r.branch_code))
-        map.set(r.branch_code, { code: r.branch_code, name: r.branch_name, salesAmt: 0, salesQty: 0, debt: 0, tmzAmt: 0 });
+        map.set(r.branch_code, { code: r.branch_code, name: r.branch_name, salesAmt: 0, salesQty: 0, debt: 0, tmzAmt: 0, cashflow: cashByCode[r.branch_code] ?? 0 });
       const e = map.get(r.branch_code)!;
       e.salesAmt += r.amount; e.salesQty += r.qty;
     }
@@ -211,7 +212,7 @@ export default function DashboardPage() {
       {tab === "overview" && hasData && (
         <>
           {/* KPI strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <KpiCard
               label="Реализация"
               value={fmt(combinedTotal)}
@@ -243,6 +244,14 @@ export default function DashboardPage() {
               color="emerald"
               icon={Package}
               href="/dashboard/tmz"
+            />
+            <KpiCard
+              label="Поступления ДС"
+              value={cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}
+              sub={cashFlow.length > 0 ? `${cashFlow.length} филиалов · ${salesDate ?? ""}` : "Загрузите Карточку счета 1000"}
+              color={cashFlowTotal > 0 ? "green" : "default"}
+              icon={TrendingUp}
+              href="/dashboard/sales"
             />
           </div>
 
@@ -347,7 +356,7 @@ export default function DashboardPage() {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
             <div className="text-sm font-bold text-gray-900">Сводка по филиалам</div>
-            <div className="text-xs text-gray-400 mt-0.5">Продажи · Дебиторка · ТМЗ</div>
+            <div className="text-xs text-gray-400 mt-0.5">Продажи · Дебиторка · ТМЗ · Поступления</div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -358,7 +367,8 @@ export default function DashboardPage() {
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Кол-во</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-red-400 uppercase tracking-wide">Дебиторка</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-emerald-500 uppercase tracking-wide">ТМЗ остаток</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Доля продаж</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-teal-500 uppercase tracking-wide">Поступления</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Доля</th>
                 </tr>
               </thead>
               <tbody>
@@ -382,9 +392,12 @@ export default function DashboardPage() {
                       <td className="px-4 py-3 text-right font-mono text-emerald-600">
                         {b.tmzAmt > 0 ? fmt(b.tmzAmt) : <span className="text-gray-300">—</span>}
                       </td>
+                      <td className="px-4 py-3 text-right font-mono text-teal-600 font-semibold">
+                        {b.cashflow > 0 ? fmt(b.cashflow) : <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: C[i % C.length] }} />
                           </div>
                           <span className="text-xs font-semibold text-gray-500 w-9 text-right tabular-nums">{share.toFixed(1)}%</span>
@@ -401,6 +414,7 @@ export default function DashboardPage() {
                   <td className="px-4 py-3 text-right font-mono text-gray-500 text-xs">{ru(salesQty + bonusQty)} шт</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-red-600">{debtTotal > 0 ? fmt(debtTotal) : "—"}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{tmzTotal > 0 ? fmt(tmzTotal) : "—"}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-teal-600">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</td>
                   <td />
                 </tr>
               </tfoot>
