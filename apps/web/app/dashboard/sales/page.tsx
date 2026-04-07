@@ -368,9 +368,10 @@ function PieTip({ active, payload }: { active?: boolean; payload?: { name: strin
 }
 
 // ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
-function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal, cashFlow }: {
+function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal, cashFlow, summary, bonusSummary }: {
   salesTree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
   cashFlow: CashFlowSummaryRow[];
+  summary: SalesReportSummaryRow[]; bonusSummary: SalesReportSummaryRow[];
 }) {
   const cashByCode = useMemo(() => Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount])), [cashFlow]);
 
@@ -383,18 +384,21 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
     [totals, grandTotal, cashByCode]);
 
   const catData = useMemo(() => {
-    // salesTree level 0 = cat1 (brand), level 1 children = cat2 (product type)
-    // Flatten all cat2 nodes across all cat1 parents for a meaningful pie
-    const cat2Nodes = salesTree.flatMap(n => n.children.length > 0 ? n.children : [n]);
-    const sorted = [...cat2Nodes].sort((a, b) => b.total.amount - a.total.amount);
-    const top = sorted.slice(0, 7).map(n => ({
-      name: n.label.length > 16 ? n.label.slice(0, 16) + "…" : n.label,
-      value: n.total.amount,
+    // Use cat2 (product type) directly from summary rows, same as dashboard
+    const map = new Map<string, number>();
+    for (const r of [...summary, ...bonusSummary]) {
+      const k = r.cat2 ?? r.cat1 ?? "Прочее";
+      map.set(k, (map.get(k) ?? 0) + r.amount);
+    }
+    const entries = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    const top = entries.slice(0, 7).map(([name, value]) => ({
+      name: name.length > 16 ? name.slice(0, 16) + "…" : name,
+      value,
     }));
-    const rest = sorted.slice(7).reduce((s, n) => s + n.total.amount, 0);
+    const rest = entries.slice(7).reduce((s, [, v]) => s + v, 0);
     if (rest > 0) top.push({ name: "Прочее", value: rest });
     return top;
-  }, [salesTree]);
+  }, [summary, bonusSummary]);
 
   return (
     <div className="space-y-4">
@@ -1362,7 +1366,7 @@ export default function SalesPage() {
           </div>
         </div>
       ) : activeTab === "overview" ? (
-        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} cashFlow={cashFlow} />
+        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} cashFlow={cashFlow} summary={summary} bonusSummary={bonusSummary} />
       ) : activeTab === "branches" ? (
         <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} cashFlow={cashFlow} />
       ) : activeTab === "categories" ? (
