@@ -9,6 +9,7 @@ from models.models import SalesReportEntry
 router = APIRouter()
 
 BRANCH_NAMES = {
+    "BEREКЕ":     "Береке",
     "MAIN":       "Основной склад",
     "AKTAU":      "Актау",
     "AKTOBE":     "Актобе",

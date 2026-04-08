@@ -9,7 +9,8 @@ from datetime import date
 import openpyxl
 
 BRANCH_COLS = [
-    ("MAIN",       7,  8),
+    ("BEREКЕ",     3,  4),   # ИП Береке (col 3 = qty, col 4 = sum)
+    ("MAIN",       7,  8),   # Основной склад
     ("AKTAU",     11, 12),
     ("AKTOBE",    15, 16),
     ("ALMATY",    19, 20),
