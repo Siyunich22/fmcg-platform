@@ -447,19 +447,20 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
       </div>
 
       {/* Отгрузки / Потоки денег bar */}
-      {realisationTotal > 0 && (() => {
+      {summary.length > 0 && (() => {
+        const salesTotal = summary.reduce((s, r) => s + r.amount, 0);
         const cashTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
-        const barTotal = realisationTotal + cashTotal;
-        const salesPct = barTotal > 0 ? realisationTotal / barTotal * 100 : 50;
+        const barTotal = salesTotal + cashTotal;
+        const salesPct = barTotal > 0 ? salesTotal / barTotal * 100 : 50;
         const cashPct = barTotal > 0 ? cashTotal / barTotal * 100 : 50;
-        const coveragePct = realisationTotal > 0 ? cashTotal / realisationTotal * 100 : 0;
+        const coveragePct = salesTotal > 0 ? cashTotal / salesTotal * 100 : 0;
         return (
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-6 flex-wrap">
               <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Отгрузки / Потоки денег</div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="text-xs text-gray-700">Отгрузки <span className="font-bold">{fmt(realisationTotal)}</span></span>
+                <span className="text-xs text-gray-700">Отгрузки <span className="font-bold">{fmt(salesTotal)}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-teal-500" />
