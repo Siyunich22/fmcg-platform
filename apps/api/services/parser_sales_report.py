@@ -35,9 +35,6 @@ SKIP_CODES = {"KSN00000263", "URA00000435", "AST00000683", "00000000005", "00000
 SKIP_HEADER_ONLY = re.compile(r"^(товары)\s*$", re.I)
 SKIP_HEADER_CODES = {"00000000002"}
 
-# Skip rows whose names contain "пакет" (including their subtree)
-PАКЕТ_RE = re.compile(r"пакет", re.I)
-
 BONUS_CODE = "00000000012"
 
 RU_MONTHS = {
@@ -128,11 +125,6 @@ def parse_sales_report(filepath: str) -> list[dict]:
 
         # Check if this row starts a skip section
         if SKIP_SECTIONS.match(name) or code in SKIP_CODES:
-            skip_until = indent
-            continue
-
-        # Check for (пакет) — skip row and subtree
-        if PАКЕТ_RE.search(name):
             skip_until = indent
             continue
 
