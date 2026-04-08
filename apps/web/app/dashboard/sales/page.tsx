@@ -1321,7 +1321,7 @@ export default function SalesPage() {
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
             <div className="text-xl font-black text-amber-600">{fmtQ(bonusGrandQty)}</div>
-            <div className="text-[11px] text-gray-400">{fmt(bonusTotal)}</div>
+            <div className="text-[11px] text-gray-400">количество шт</div>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Дебиторка</div>

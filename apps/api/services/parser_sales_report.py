@@ -105,6 +105,7 @@ def parse_sales_report(filepath: str) -> list[dict]:
     # skip_until_indent: if set, skip all rows with indent > this value
     skip_until: float | None = None
     in_bonus = False
+    bonus_indent: float | None = None  # indent level of the БОНУСЫ header row
 
     for row in raw:
         indent = row["indent"]
@@ -132,11 +133,13 @@ def parse_sales_report(filepath: str) -> list[dict]:
         if SKIP_HEADER_ONLY.match(name) or code in SKIP_HEADER_CODES:
             continue
 
-        # Track bonus section
+        # Track bonus section: enter on BONUS_CODE row, exit when back at same indent
         if code == BONUS_CODE:
             in_bonus = True
-        elif indent <= 0:
+            bonus_indent = indent
+        elif in_bonus and bonus_indent is not None and indent <= bonus_indent:
             in_bonus = False
+            bonus_indent = None
 
         # Update context
         ctx[indent] = name
