@@ -447,8 +447,8 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
       </div>
 
       {/* Отгрузки / Потоки денег bar */}
-      {summary.length > 0 && (() => {
-        const salesTotal = summary.reduce((s, r) => s + r.amount, 0);
+      {grandTotal > 0 && (() => {
+        const salesTotal = grandTotal;  // combinedGrandTotal — same as KPI "Реализация"
         const cashTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
         const barTotal = salesTotal + cashTotal;
         const salesPct = barTotal > 0 ? salesTotal / barTotal * 100 : 50;
@@ -460,7 +460,7 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
               <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Отгрузки / Потоки денег</div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="text-xs text-gray-700">Отгрузки <span className="font-bold">{fmt(salesTotal)}</span></span>
+                <span className="text-xs text-gray-700">Отгрузки <span className="font-bold">{fmt(grandTotal)}</span></span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-teal-500" />
