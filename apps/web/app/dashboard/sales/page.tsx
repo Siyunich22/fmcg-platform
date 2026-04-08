@@ -446,28 +446,35 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
         </div>
       </div>
 
-      {/* Bonus vs Sales summary bar */}
-      {realisationTotal > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex items-center gap-6 flex-wrap">
-            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Соотношение продажи / бонусы</div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500" />
-              <span className="text-xs text-gray-700">Продажи <span className="font-bold">{fmt(realisationTotal)}</span></span>
+      {/* Отгрузки / Потоки денег bar */}
+      {realisationTotal > 0 && (() => {
+        const cashTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
+        const barTotal = realisationTotal + cashTotal;
+        const salesPct = barTotal > 0 ? realisationTotal / barTotal * 100 : 50;
+        const cashPct = barTotal > 0 ? cashTotal / barTotal * 100 : 50;
+        const coveragePct = realisationTotal > 0 ? cashTotal / realisationTotal * 100 : 0;
+        return (
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-6 flex-wrap">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Отгрузки / Потоки денег</div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="text-xs text-gray-700">Отгрузки <span className="font-bold">{fmt(realisationTotal)}</span></span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-teal-500" />
+                <span className="text-xs text-gray-700">Поступления <span className="font-bold text-teal-600">{cashTotal > 0 ? fmt(cashTotal) : "—"}</span>
+                  {cashTotal > 0 && <span className="text-gray-400 ml-1">({coveragePct.toFixed(1)}%)</span>}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span className="text-xs text-gray-700">Бонусы <span className="font-bold text-amber-600">{fmt(bonusTotal)}</span>
-                <span className="text-gray-400 ml-1">({(bonusTotal / (realisationTotal + bonusTotal) * 100).toFixed(1)}%)</span>
-              </span>
+            <div className="mt-3 flex h-3 rounded-full overflow-hidden bg-gray-100">
+              <div className="bg-blue-500 h-full transition-all" style={{ width: `${salesPct}%` }} />
+              <div className="bg-teal-400 h-full transition-all" style={{ width: `${cashPct}%` }} />
             </div>
           </div>
-          <div className="mt-3 flex h-3 rounded-full overflow-hidden bg-gray-100">
-            <div className="bg-blue-500 h-full transition-all" style={{ width: `${realisationTotal / (realisationTotal + bonusTotal) * 100}%` }} />
-            <div className="bg-amber-400 h-full transition-all flex-1" />
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
