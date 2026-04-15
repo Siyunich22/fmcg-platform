@@ -517,6 +517,38 @@ export const useUploadSalesReport = () => {
   });
 };
 
+// ── Product Costs & ФОТ hooks ────────────────────────────────────────────────
+
+export const useProductCosts = () =>
+  useQuery<Record<string, number>>({
+    queryKey: ["product-costs"],
+    queryFn: () => api.get("/api/sales-report/costs").then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useUpsertProductCost = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; code: string; unit_cost: number }, Error, { code: string; name?: string; unit_cost: number }>({
+    mutationFn: (payload) => api.post("/api/sales-report/costs", payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["product-costs"] }),
+  });
+};
+
+export const useFot = () =>
+  useQuery<{ pct: number }>({
+    queryKey: ["fot-setting"],
+    queryFn: () => api.get("/api/sales-report/fot").then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+export const useSetFot = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; pct: number }, Error, { pct: number }>({
+    mutationFn: (payload) => api.post("/api/sales-report/fot", payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fot-setting"] }),
+  });
+};
+
 // ── Cash Flow hooks ──────────────────────────────────────────────────────────
 
 export interface CashFlowSummaryRow {

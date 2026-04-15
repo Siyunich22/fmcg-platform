@@ -218,6 +218,23 @@ class CashFlowEntry(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ProductCost(Base):
+    """Unit cost (себестоимость) per product code."""
+    __tablename__ = "product_costs"
+    code = Column(String(50), primary_key=True)
+    name = Column(Text, nullable=True)
+    unit_cost = Column(Numeric(14, 2), default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FotSetting(Base):
+    """ФОТ (payroll) setting — a single row with id=1."""
+    __tablename__ = "fot_settings"
+    id = Column(Integer, primary_key=True, default=1)
+    pct = Column(Numeric(5, 2), default=25.00)   # % of реализация
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Alert(Base):
     __tablename__ = "alerts"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

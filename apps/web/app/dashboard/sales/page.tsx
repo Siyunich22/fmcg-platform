@@ -11,6 +11,7 @@ import {
   useSalesReportStats, useClearSalesReport,
   useTmzSummary, useOsvDates, useOsvByBranch,
   useCashFlowSummary, useUploadCashFlow,
+  useProductCosts, useUpsertProductCost, useFot, useSetFot,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
   type TmzSummaryRow, type OsvByBranchRow, type CashFlowSummaryRow,
 } from "@/hooks/useApi";
@@ -1105,14 +1106,18 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
 }
 
 // ── TAB 4: Продукты ───────────────────────────────────────────────────────────
-function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
+function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick, costs, onCostChange }: {
   allRows: SalesReportRow[]; bonusRows: SalesReportRow[];
   tree: PivotNode[]; branches: { code: string; name: string }[];
   onProductClick: (r: SalesReportRow) => void;
+  costs: Record<string, number>;
+  onCostChange: (code: string, name: string, unitCost: number) => void;
 }) {
   const [search, setSearch] = useState("");
   const [cat1, setCat1] = useState("");
   const [branch, setBranch] = useState("");
+  // local draft edits: code -> string value while typing
+  const [draftCosts, setDraftCosts] = useState<Record<string, string>>({});
 
   const cat1Options = useMemo(() => tree.map(n => n.label), [tree]);
 
@@ -1127,7 +1132,6 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
       if (!map.has(k)) map.set(k, { row: r, amt: 0, qty: 0, branchCount: 0 });
       const g = map.get(k)!; g.amt += r.amount; g.qty += r.qty;
     }
-    // count unique branches per product
     const branchMap = new Map<string, Set<string>>();
     for (const r of [...allRows, ...bonusRows]) {
       const k = r.code || r.name;
@@ -1171,21 +1175,34 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-[1fr_130px_100px_48px] gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-          <div>Наименование</div><div className="text-right">Сумма</div><div className="text-right">Кол-во</div><div className="text-center">Фил.</div>
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_110px_90px_110px_110px_90px_40px] gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+          <div>Наименование</div>
+          <div className="text-right">Реализация</div>
+          <div className="text-right">Кол-во</div>
+          <div className="text-right">С/сть ед. ₸</div>
+          <div className="text-right">Себестоимость</div>
+          <div className="text-right">Вал. прибыль</div>
+          <div className="text-center">Фил.</div>
         </div>
         {products.length === 0 ? (
           <div className="p-12 text-center text-gray-400 text-sm">Нет позиций</div>
         ) : (
           <>
             {products.slice(0, 300).map((g, i) => {
+              const k = g.row.code || g.row.name;
+              const unitCost = costs[k] ?? 0;
+              const costTotal = g.qty * unitCost;
+              const profit = g.amt - costTotal;
+              const hasCost = unitCost > 0;
               const pct = maxAmt > 0 ? g.amt / maxAmt * 100 : 0;
+              const draftVal = draftCosts[k] ?? String(unitCost || "");
               return (
-                <button key={g.row.code || g.row.name + i}
-                  onClick={() => onProductClick(g.row)}
-                  className={cn("w-full text-left grid grid-cols-[1fr_130px_100px_48px] gap-3 items-center px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50/40 transition-colors group",
-                    i % 2 === 0 ? "bg-white" : "bg-gray-50/20")}>
-                  <div className="min-w-0">
+                <div key={k + i}
+                  className={cn("grid grid-cols-[1fr_110px_90px_110px_110px_90px_40px] gap-2 items-center px-4 py-2.5 border-b border-gray-50 transition-colors group",
+                    i % 2 === 0 ? "bg-white" : "bg-gray-50/20", "hover:bg-blue-50/30")}>
+                  {/* Name */}
+                  <button className="min-w-0 text-left" onClick={() => onProductClick(g.row)}>
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover:bg-blue-500 flex-shrink-0" />
                       <span className="text-xs text-gray-700 group-hover:text-blue-700 truncate">{g.row.name}</span>
@@ -1194,11 +1211,40 @@ function ProductsTab({ allRows, bonusRows, tree, branches, onProductClick }: {
                       <div className="h-full bg-blue-300 group-hover:bg-blue-500 rounded-full transition-colors" style={{ width: `${pct}%` }} />
                     </div>
                     {g.row.cat1 && <div className="text-[10px] text-gray-400 ml-3 mt-0.5 truncate">{[g.row.cat1, g.row.cat2].filter(Boolean).join(" › ")}</div>}
-                  </div>
+                  </button>
+                  {/* Реализация */}
                   <div className="text-right text-xs font-bold text-gray-800 tabular-nums">{fmt(g.amt)}</div>
+                  {/* Кол-во */}
                   <div className="text-right text-xs text-gray-500 tabular-nums">{fmtQ(g.qty)}</div>
+                  {/* С/сть ед — editable */}
+                  <div className="flex justify-end">
+                    <input
+                      type="number" min={0} step={1}
+                      value={draftVal}
+                      placeholder="0"
+                      onChange={e => setDraftCosts(prev => ({ ...prev, [k]: e.target.value }))}
+                      onBlur={() => {
+                        const v = parseFloat(draftCosts[k] ?? "");
+                        if (!isNaN(v) && v >= 0) onCostChange(g.row.code || g.row.name, g.row.name, v);
+                        setDraftCosts(prev => { const n = { ...prev }; delete n[k]; return n; });
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      className="w-24 text-xs text-right border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-400 tabular-nums bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  {/* Себестоимость */}
+                  <div className={cn("text-right text-xs tabular-nums", hasCost ? "text-gray-600 font-semibold" : "text-gray-300")}>
+                    {hasCost ? fmt(costTotal) : "—"}
+                  </div>
+                  {/* Валовая прибыль */}
+                  <div className={cn("text-right text-xs tabular-nums font-semibold", !hasCost ? "text-gray-300" : profit >= 0 ? "text-green-600" : "text-red-500")}>
+                    {hasCost ? fmt(profit) : "—"}
+                  </div>
+                  {/* Филиалы */}
                   <div className="text-center text-xs font-semibold text-blue-500">{g.branchCount}</div>
-                </button>
+                </div>
               );
             })}
             {products.length > 300 && (
@@ -1243,6 +1289,14 @@ export default function SalesPage() {
   const { data: osvDates = [] } = useOsvDates();
   const { data: debtByBranch = [] } = useOsvByBranch(osvDates[0], true);
   const { data: cashFlow = [], isError: cashFlowError, error: cashFlowErr } = useCashFlowSummary(selectedDate || undefined);
+  const { data: costs = {} } = useProductCosts();
+  const upsertCost = useUpsertProductCost();
+  const { data: fotData } = useFot();
+  const setFot = useSetFot();
+  const [fotPctLocal, setFotPctLocal] = useState<string>("");
+  useEffect(() => {
+    if (fotData?.pct != null && fotPctLocal === "") setFotPctLocal(String(fotData.pct));
+  }, [fotData]);
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);
@@ -1279,6 +1333,23 @@ export default function SalesPage() {
   const cashFlowTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
   const isEmpty = !isLoading && summary.length === 0 && bonusSummary.length === 0;
 
+  // Cost / profit KPIs
+  const realisationTotal = summary.reduce((s, r) => s + r.amount, 0); // реализация (no bonuses)
+  const sebCostTotal = useMemo(() => {
+    const qtyMap = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRows]) {
+      const k = r.code || r.name;
+      qtyMap.set(k, (qtyMap.get(k) ?? 0) + r.qty);
+    }
+    let t = 0;
+    for (const [k, qty] of qtyMap) t += qty * (costs[k] ?? 0);
+    return t;
+  }, [allRows, bonusRows, costs]);
+  const fotPct = parseFloat(fotPctLocal) || (fotData?.pct ?? 25);
+  const fotAmount = realisationTotal * fotPct / 100;
+  const grossProfit = realisationTotal - sebCostTotal;
+  const grossMargin = realisationTotal > 0 ? grossProfit / realisationTotal * 100 : 0;
+
   return (
     <div className="space-y-4 max-w-[1600px]">
       {/* Header */}
@@ -1312,36 +1383,75 @@ export default function SalesPage() {
 
       {/* KPI strip — показывается когда есть хоть какие-то данные */}
       {(!isEmpty || cashFlowTotal > 0) && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
-            <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
-            <div className="text-[11px] text-blue-200">{fmtQ(grandQty + bonusGrandQty)}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
-            <div className="text-xl font-black text-amber-600">{fmtQ(bonusGrandQty)}</div>
-            <div className="text-[11px] text-gray-400">количество шт</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Дебиторка</div>
-            <div className="text-xl font-black text-orange-600">{fmt(debtByBranch.reduce((s, r) => s + r.total_net, 0))}</div>
-            <div className="text-[11px] text-gray-400">{debtByBranch.length} филиалов</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
-            <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
-            <div className="text-[11px] text-gray-400">{tmzSummary.reduce((s, r) => s + r.sku_count, 0).toLocaleString("ru")} SKU</div>
-          </div>
-          <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-500">Поступления</div>
-            <div className="text-xl font-black text-teal-700">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</div>
-            <div className="text-[11px] text-teal-400">
-              {cashFlowError
-                ? <span className="text-red-400" title={cashFlowErr instanceof Error ? cashFlowErr.message : "ошибка"}>⚠ ошибка API</span>
-                : cashFlow.length > 0 ? `${cashFlow.length} филиалов` : "нет данных"}
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="bg-blue-600 text-white rounded-xl px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">Реализация</div>
+              <div className="text-xl font-black">{fmt(combinedGrandTotal)}</div>
+              <div className="text-[11px] text-blue-200">{fmtQ(grandQty + bonusGrandQty)}</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Бонусы</div>
+              <div className="text-xl font-black text-amber-600">{fmtQ(bonusGrandQty)}</div>
+              <div className="text-[11px] text-gray-400">количество шт</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Дебиторка</div>
+              <div className="text-xl font-black text-orange-600">{fmt(debtByBranch.reduce((s, r) => s + r.total_net, 0))}</div>
+              <div className="text-[11px] text-gray-400">{debtByBranch.length} филиалов</div>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">ТМЗ остатки</div>
+              <div className="text-xl font-black text-emerald-600">{fmt(tmzTotal)}</div>
+              <div className="text-[11px] text-gray-400">{tmzSummary.reduce((s, r) => s + r.sku_count, 0).toLocaleString("ru")} SKU</div>
+            </div>
+            <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-500">Поступления</div>
+              <div className="text-xl font-black text-teal-700">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</div>
+              <div className="text-[11px] text-teal-400">
+                {cashFlowError
+                  ? <span className="text-red-400" title={cashFlowErr instanceof Error ? cashFlowErr.message : "ошибка"}>⚠ ошибка API</span>
+                  : cashFlow.length > 0 ? `${cashFlow.length} филиалов` : "нет данных"}
+              </div>
             </div>
           </div>
+          {/* Profit KPI row */}
+          {realisationTotal > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Себестоимость</div>
+                <div className="text-xl font-black text-gray-700">{sebCostTotal > 0 ? fmt(sebCostTotal) : <span className="text-gray-300 text-sm font-normal">не заполнено</span>}</div>
+                <div className="text-[11px] text-gray-400">по ценам продуктов</div>
+              </div>
+              <div className={cn("rounded-xl px-4 py-3 border", grossProfit >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200")}>
+                <div className={cn("text-[10px] font-semibold uppercase tracking-wide", grossProfit >= 0 ? "text-green-500" : "text-red-400")}>Валовая прибыль</div>
+                <div className={cn("text-xl font-black", grossProfit >= 0 ? "text-green-700" : "text-red-600")}>{sebCostTotal > 0 ? fmt(grossProfit) : "—"}</div>
+                <div className={cn("text-[11px]", grossProfit >= 0 ? "text-green-400" : "text-red-300")}>реализация − себестоимость</div>
+              </div>
+              <div className={cn("rounded-xl px-4 py-3 border", grossMargin >= 0 ? "bg-indigo-50 border-indigo-200" : "bg-red-50 border-red-200")}>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Валовая маржа</div>
+                <div className="text-xl font-black text-indigo-700">{sebCostTotal > 0 ? grossMargin.toFixed(1) + "%" : "—"}</div>
+                <div className="text-[11px] text-indigo-400">валовая прибыль / реализация</div>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-purple-500">ФОТ</div>
+                <div className="text-xl font-black text-purple-700">{fmt(fotAmount)}</div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <input
+                    type="number" min={0} max={100} step={0.1}
+                    value={fotPctLocal}
+                    onChange={e => setFotPctLocal(e.target.value)}
+                    onBlur={() => {
+                      const v = parseFloat(fotPctLocal);
+                      if (!isNaN(v) && v >= 0) setFot.mutate({ pct: v });
+                    }}
+                    className="w-12 text-xs text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-purple-400 tabular-nums"
+                  />
+                  <span className="text-[11px] text-purple-400">% от реализации</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1381,7 +1491,10 @@ export default function SalesPage() {
         <CategoriesTab tree={tree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
           allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
       ) : (
-        <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct} />
+        <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct}
+          costs={costs}
+          onCostChange={(code, name, unitCost) => upsertCost.mutate({ code, name, unit_cost: unitCost })}
+        />
       )}
 
       {selectedProduct && (

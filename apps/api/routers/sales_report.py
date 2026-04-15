@@ -1,10 +1,12 @@
 from datetime import date as date_type
-from fastapi import APIRouter, Depends, Query
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
-from models.models import SalesReportEntry
+from models.models import SalesReportEntry, ProductCost, FotSetting
 
 router = APIRouter()
 
@@ -179,6 +181,56 @@ async def get_totals(
         }
         for r in result.all()
     ]
+
+
+@router.get("/costs")
+async def get_costs(db: AsyncSession = Depends(get_db)):
+    """All product unit costs (себестоимость)."""
+    result = await db.execute(select(ProductCost))
+    rows = result.scalars().all()
+    return {r.code: float(r.unit_cost or 0) for r in rows}
+
+
+@router.post("/costs")
+async def upsert_cost(
+    code: str = Body(...),
+    name: Optional[str] = Body(None),
+    unit_cost: float = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upsert unit cost for a product code."""
+    stmt = pg_insert(ProductCost).values(
+        code=code, name=name, unit_cost=unit_cost
+    ).on_conflict_do_update(
+        index_elements=["code"],
+        set_={"unit_cost": unit_cost, "name": name},
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"ok": True, "code": code, "unit_cost": unit_cost}
+
+
+@router.get("/fot")
+async def get_fot(db: AsyncSession = Depends(get_db)):
+    """Get ФОТ setting (pct of реализация)."""
+    result = await db.execute(select(FotSetting).where(FotSetting.id == 1))
+    row = result.scalar_one_or_none()
+    return {"pct": float(row.pct) if row else 25.0}
+
+
+@router.post("/fot")
+async def set_fot(
+    pct: float = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set ФОТ percentage."""
+    stmt = pg_insert(FotSetting).values(id=1, pct=pct).on_conflict_do_update(
+        index_elements=["id"],
+        set_={"pct": pct},
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"ok": True, "pct": pct}
 
 
 async def _resolve_date(period_date: str | None, db: AsyncSession) -> date_type | None:
