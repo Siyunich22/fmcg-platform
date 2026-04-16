@@ -1046,40 +1046,37 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                 if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
                 perBranch[r.branch_code].qty += r.qty; perBranch[r.branch_code].amount += r.amount;
               }
-              {(() => {
-                const unitCost = costs[p.code || p.name] ?? 0;
-                const pCost = p.qty * unitCost;
-                const pProfit = p.amount - pCost;
-                return (
-                  <div key={`${row.id}_${p.code}_${pi}`}
-                    className={cn("grid items-center border-b border-gray-50 hover:bg-blue-50/30", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}
-                    style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
-                    <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
-                      <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover/p:bg-blue-500 flex-shrink-0" />
-                        <span className="text-[11px] text-gray-600 group-hover/p:text-blue-700 truncate">{p.name}</span>
-                        <span className="text-[9px] text-blue-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
-                      </button>
-                    </div>
-                    <div className="text-right pr-4 py-1.5">
-                      <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
-                    </div>
-                    <div className="text-right pr-4 py-1.5">
-                      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
-                    </div>
-                    <div className="text-right pr-4 py-1.5">
-                      {unitCost > 0 ? (
-                        <div className={cn("text-[11px] font-semibold tabular-nums", pProfit >= 0 ? "text-green-600" : "text-red-500")}>{fmt(pProfit)}</div>
-                      ) : (
-                        <div className="text-[10px] text-gray-300">—</div>
-                      )}
-                    </div>
-                    <div className="pl-3 pr-3 py-1.5">
-                      <DistBar byBranch={perBranch} total={p.amount} />
-                    </div>
+              const unitCost = costs[p.code || p.name] ?? 0;
+              const pCost = p.qty * unitCost;
+              const pProfit = p.amount - pCost;
+              return (
+                <div key={`${row.id}_${p.code}_${pi}`}
+                  className={cn("grid items-center border-b border-gray-50 hover:bg-blue-50/30", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}
+                  style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
+                  <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
+                    <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover/p:bg-blue-500 flex-shrink-0" />
+                      <span className="text-[11px] text-gray-600 group-hover/p:text-blue-700 truncate">{p.name}</span>
+                      <span className="text-[9px] text-blue-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
+                    </button>
                   </div>
-                );
-              })()
+                  <div className="text-right pr-4 py-1.5">
+                    <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
+                  </div>
+                  <div className="text-right pr-4 py-1.5">
+                    <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                  </div>
+                  <div className="text-right pr-4 py-1.5">
+                    {unitCost > 0 ? (
+                      <div className={cn("text-[11px] font-semibold tabular-nums", pProfit >= 0 ? "text-green-600" : "text-red-500")}>{fmt(pProfit)}</div>
+                    ) : (
+                      <div className="text-[10px] text-gray-300">—</div>
+                    )}
+                  </div>
+                  <div className="pl-3 pr-3 py-1.5">
+                    <DistBar byBranch={perBranch} total={p.amount} />
+                  </div>
+                </div>
               );
             })}
           </div>
