@@ -457,53 +457,49 @@ export default function DashboardPage() {
               <tbody>
                 {branchTable.map((b, i) => {
                   const share = combinedTotal > 0 ? b.salesAmt / combinedTotal * 100 : 0;
+                  const cost = branchCostMap.get(b.code) ?? 0;
+                  const profit = b.salesAmt - cost;
+                  const margin = b.salesAmt > 0 && cost > 0 ? profit / b.salesAmt * 100 : null;
                   return (
-                    {(() => {
-                      const cost = branchCostMap.get(b.code) ?? 0;
-                      const profit = b.salesAmt - cost;
-                      const margin = b.salesAmt > 0 && cost > 0 ? profit / b.salesAmt * 100 : null;
-                      return (
-                        <tr key={b.code} className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/30 transition-colors`}>
-                          <td className="px-5 py-3 font-semibold text-gray-900 flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: C[i % C.length] }} />
-                            {b.name}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-blue-700 font-bold">
-                            {b.salesAmt > 0 ? fmt(b.salesAmt) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-gray-500 text-xs">
-                            {b.salesQty > 0 ? ru(b.salesQty) + " шт" : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-red-600">
-                            {b.debt > 0 ? fmt(b.debt) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-emerald-600">
-                            {b.tmzAmt > 0 ? fmt(b.tmzAmt) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-teal-600 font-semibold">
-                            {b.cashflow > 0 ? fmt(b.cashflow) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className={`px-4 py-3 text-right font-mono font-bold ${margin !== null ? (profit >= 0 ? "text-green-600" : "text-red-500") : "text-gray-300"}`}>
-                            {margin !== null ? fmt(profit) : "—"}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {margin !== null ? (
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${margin >= 30 ? "bg-green-100 text-green-700" : margin >= 15 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>
-                                {margin.toFixed(1)}%
-                              </span>
-                            ) : <span className="text-gray-300 text-xs">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: C[i % C.length] }} />
-                              </div>
-                              <span className="text-xs font-semibold text-gray-500 w-9 text-right tabular-nums">{share.toFixed(1)}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })()}
+                    <tr key={b.code} className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/30 transition-colors`}>
+                      <td className="px-5 py-3 font-semibold text-gray-900 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: C[i % C.length] }} />
+                        {b.name}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-blue-700 font-bold">
+                        {b.salesAmt > 0 ? fmt(b.salesAmt) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-500 text-xs">
+                        {b.salesQty > 0 ? ru(b.salesQty) + " шт" : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-red-600">
+                        {b.debt > 0 ? fmt(b.debt) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-600">
+                        {b.tmzAmt > 0 ? fmt(b.tmzAmt) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-teal-600 font-semibold">
+                        {b.cashflow > 0 ? fmt(b.cashflow) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-mono font-bold ${margin !== null ? (profit >= 0 ? "text-green-600" : "text-red-500") : "text-gray-300"}`}>
+                        {margin !== null ? fmt(profit) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {margin !== null ? (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${margin >= 30 ? "bg-green-100 text-green-700" : margin >= 15 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>
+                            {margin.toFixed(1)}%
+                          </span>
+                        ) : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: C[i % C.length] }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-500 w-9 text-right tabular-nums">{share.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
