@@ -3,8 +3,10 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   useSalesReportDates, useSalesReportTotals, useSalesReportSummary,
+  useSalesReportRows,
   useOsvDates, useOsvByBranch, useTmzSummary, useTmzDates,
   useCashFlowSummary,
+  useProductCosts, useFot,
 } from "@/hooks/useApi";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -103,6 +105,12 @@ export default function DashboardPage() {
   // ── Cash flow data ─────────────────────────────────────────────────────────
   const { data: cashFlow = [] } = useCashFlowSummary(salesDate || undefined);
 
+  // ── Cost / profit data ─────────────────────────────────────────────────
+  const { data: costs = {} } = useProductCosts();
+  const { data: fotData } = useFot();
+  const { data: allRows = [] } = useSalesReportRows({ period_date: salesDate || undefined, is_bonus: false });
+  const { data: bonusRowsData = [] } = useSalesReportRows({ period_date: salesDate || undefined, is_bonus: true });
+
   // ── Computed KPIs ──────────────────────────────────────────────────────
   const salesTotal = totals.reduce((s, t) => s + t.amount, 0);
   const salesQty = totals.reduce((s, t) => s + t.qty, 0);
@@ -114,16 +122,45 @@ export default function DashboardPage() {
   const cashFlowTotal = cashFlow.reduce((s, r) => s + r.total_amount, 0);
   const cashByCode = Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount]));
 
+  const sebCostTotal = useMemo(() => {
+    const qtyMap = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRowsData]) {
+      const k = r.code || r.name;
+      qtyMap.set(k, (qtyMap.get(k) ?? 0) + r.qty);
+    }
+    let t = 0;
+    for (const [k, qty] of qtyMap) t += qty * (costs[k] ?? 0);
+    return t;
+  }, [allRows, bonusRowsData, costs]);
+  const realisationOnly = summary.reduce((s, r) => s + r.amount, 0);
+  const grossProfit = realisationOnly - sebCostTotal;
+  const grossMargin = realisationOnly > 0 ? grossProfit / realisationOnly * 100 : 0;
+  const fotPct = fotData?.pct ?? 25;
+  const fotAmount = realisationOnly * fotPct / 100;
+
   // ── Branch chart data ──────────────────────────────────────────────────
+  const branchCostMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRowsData]) {
+      const c = (costs[r.code || r.name] ?? 0) * r.qty;
+      m.set(r.branch_code, (m.get(r.branch_code) ?? 0) + c);
+    }
+    return m;
+  }, [allRows, bonusRowsData, costs]);
+
   const branchChartData = useMemo(() => {
-    const map = new Map<string, { name: string; amount: number; cashflow: number }>();
+    const map = new Map<string, { name: string; amount: number; cashflow: number; grossProfit: number }>();
     for (const r of [...summary, ...bonusSummary]) {
       if (!map.has(r.branch_code))
-        map.set(r.branch_code, { name: r.branch_name, amount: 0, cashflow: cashByCode[r.branch_code] ?? 0 });
+        map.set(r.branch_code, { name: r.branch_name, amount: 0, cashflow: cashByCode[r.branch_code] ?? 0, grossProfit: 0 });
       map.get(r.branch_code)!.amount += r.amount;
     }
+    for (const [code, entry] of map) {
+      const cost = branchCostMap.get(code) ?? 0;
+      entry.grossProfit = entry.amount - cost;
+    }
     return [...map.values()].sort((a, b) => b.amount - a.amount);
-  }, [summary, bonusSummary, cashByCode]);
+  }, [summary, bonusSummary, cashByCode, branchCostMap]);
 
   // ── Category pie data ──────────────────────────────────────────────────
   const catData = useMemo(() => {
@@ -260,6 +297,44 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* Profit KPI strip */}
+          {sebCostTotal > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white border border-gray-200 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Себестоимость</span>
+                  <Package size={16} className="text-gray-300" />
+                </div>
+                <div className="text-2xl font-black tracking-tight text-gray-700">{fmt(sebCostTotal)}</div>
+                <div className="text-xs text-gray-400 mt-1.5">по ценам продуктов</div>
+              </div>
+              <div className={`bg-white border rounded-xl p-5 ${grossProfit >= 0 ? "border-green-200" : "border-red-200"}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Валовая прибыль</span>
+                  <TrendingUp size={16} className={grossProfit >= 0 ? "text-green-300" : "text-red-300"} />
+                </div>
+                <div className={`text-2xl font-black tracking-tight ${grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmt(grossProfit)}</div>
+                <div className="text-xs text-gray-400 mt-1.5">реализация − себестоимость</div>
+              </div>
+              <div className="bg-white border border-indigo-200 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Валовая маржа</span>
+                  <AlertTriangle size={16} className="text-indigo-300" />
+                </div>
+                <div className={`text-2xl font-black tracking-tight text-indigo-700`}>{grossMargin.toFixed(1)}%</div>
+                <div className="text-xs text-gray-400 mt-1.5">вал. прибыль / реализация</div>
+              </div>
+              <div className="bg-white border border-purple-200 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">ФОТ ({fotPct}%)</span>
+                  <CreditCard size={16} className="text-purple-300" />
+                </div>
+                <div className="text-2xl font-black tracking-tight text-purple-700">{fmt(fotAmount)}</div>
+                <div className="text-xs text-gray-400 mt-1.5">% от реализации</div>
+              </div>
+            </div>
+          )}
+
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             {/* Branch bar */}
@@ -285,10 +360,11 @@ export default function DashboardPage() {
                     <Tooltip
                       formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : "Поступления"]}
                     />
-                    <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={18}>
+                    <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={14}>
                       {branchChartData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                     </Bar>
-                    <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={18} fill="#10b981" opacity={0.75} />
+                    <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={14} fill="#10b981" opacity={0.75} />
+                    {sebCostTotal > 0 && <Bar dataKey="grossProfit" name="grossProfit" radius={[0, 2, 2, 0]} maxBarSize={14} fill="#6366f1" opacity={0.85} />}
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -373,6 +449,8 @@ export default function DashboardPage() {
                   <th className="text-right px-4 py-3 text-xs font-semibold text-red-400 uppercase tracking-wide">Дебиторка</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-emerald-500 uppercase tracking-wide">ТМЗ остаток</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-teal-500 uppercase tracking-wide">Поступления</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-green-500 uppercase tracking-wide">Вал. прибыль</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-indigo-400 uppercase tracking-wide">Маржа</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Доля</th>
                 </tr>
               </thead>
@@ -380,35 +458,52 @@ export default function DashboardPage() {
                 {branchTable.map((b, i) => {
                   const share = combinedTotal > 0 ? b.salesAmt / combinedTotal * 100 : 0;
                   return (
-                    <tr key={b.code} className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/30 transition-colors`}>
-                      <td className="px-5 py-3 font-semibold text-gray-900 flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: C[i % C.length] }} />
-                        {b.name}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-blue-700 font-bold">
-                        {b.salesAmt > 0 ? fmt(b.salesAmt) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-gray-500 text-xs">
-                        {b.salesQty > 0 ? ru(b.salesQty) + " шт" : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-red-600">
-                        {b.debt > 0 ? fmt(b.debt) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-emerald-600">
-                        {b.tmzAmt > 0 ? fmt(b.tmzAmt) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-teal-600 font-semibold">
-                        {b.cashflow > 0 ? fmt(b.cashflow) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: C[i % C.length] }} />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-500 w-9 text-right tabular-nums">{share.toFixed(1)}%</span>
-                        </div>
-                      </td>
-                    </tr>
+                    {(() => {
+                      const cost = branchCostMap.get(b.code) ?? 0;
+                      const profit = b.salesAmt - cost;
+                      const margin = b.salesAmt > 0 && cost > 0 ? profit / b.salesAmt * 100 : null;
+                      return (
+                        <tr key={b.code} className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/30 transition-colors`}>
+                          <td className="px-5 py-3 font-semibold text-gray-900 flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: C[i % C.length] }} />
+                            {b.name}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-blue-700 font-bold">
+                            {b.salesAmt > 0 ? fmt(b.salesAmt) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-gray-500 text-xs">
+                            {b.salesQty > 0 ? ru(b.salesQty) + " шт" : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-red-600">
+                            {b.debt > 0 ? fmt(b.debt) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-emerald-600">
+                            {b.tmzAmt > 0 ? fmt(b.tmzAmt) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-teal-600 font-semibold">
+                            {b.cashflow > 0 ? fmt(b.cashflow) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-mono font-bold ${margin !== null ? (profit >= 0 ? "text-green-600" : "text-red-500") : "text-gray-300"}`}>
+                            {margin !== null ? fmt(profit) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {margin !== null ? (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${margin >= 30 ? "bg-green-100 text-green-700" : margin >= 15 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>
+                                {margin.toFixed(1)}%
+                              </span>
+                            ) : <span className="text-gray-300 text-xs">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: C[i % C.length] }} />
+                              </div>
+                              <span className="text-xs font-semibold text-gray-500 w-9 text-right tabular-nums">{share.toFixed(1)}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   );
                 })}
               </tbody>
@@ -420,6 +515,16 @@ export default function DashboardPage() {
                   <td className="px-4 py-3 text-right font-mono font-bold text-red-600">{debtTotal > 0 ? fmt(debtTotal) : "—"}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">{tmzTotal > 0 ? fmt(tmzTotal) : "—"}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-teal-600">{cashFlowTotal > 0 ? fmt(cashFlowTotal) : "—"}</td>
+                  <td className={`px-4 py-3 text-right font-mono font-bold ${sebCostTotal > 0 ? (grossProfit >= 0 ? "text-green-600" : "text-red-600") : "text-gray-300"}`}>
+                    {sebCostTotal > 0 ? fmt(grossProfit) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {sebCostTotal > 0 ? (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${grossMargin >= 30 ? "bg-green-100 text-green-700" : grossMargin >= 15 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>
+                        {grossMargin.toFixed(1)}%
+                      </span>
+                    ) : "—"}
+                  </td>
                   <td />
                 </tr>
               </tfoot>

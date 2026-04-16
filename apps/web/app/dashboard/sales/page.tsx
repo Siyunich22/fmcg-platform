@@ -369,20 +369,38 @@ function PieTip({ active, payload }: { active?: boolean; payload?: { name: strin
 }
 
 // ── TAB 1: Обзор ──────────────────────────────────────────────────────────────
-function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal, cashFlow, summary, bonusSummary }: {
+function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, realisationTotal, cashFlow, summary, bonusSummary, allRows, bonusRows, costs }: {
   salesTree: PivotNode[]; totals: SalesReportTotal[]; grandTotal: number; bonusTotal: number; tmzTotal: number; realisationTotal: number;
   cashFlow: CashFlowSummaryRow[];
   summary: SalesReportSummaryRow[]; bonusSummary: SalesReportSummaryRow[];
+  allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; costs: Record<string, number>;
 }) {
   const cashByCode = useMemo(() => Object.fromEntries(cashFlow.map(r => [r.branch_code, r.total_amount])), [cashFlow]);
 
+  const branchCostMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRows]) {
+      const c = (costs[r.code || r.name] ?? 0) * r.qty;
+      m.set(r.branch_code, (m.get(r.branch_code) ?? 0) + c);
+    }
+    return m;
+  }, [allRows, bonusRows, costs]);
+
+  const hasCosts = useMemo(() => [...branchCostMap.values()].some(v => v > 0), [branchCostMap]);
+
   const branchData = useMemo(() =>
-    [...totals].sort((a, b) => b.amount - a.amount).map((t) => ({
-      name: t.branch_name, amount: t.amount, qty: t.qty,
-      cashflow: cashByCode[t.branch_code] ?? 0,
-      share: grandTotal > 0 ? (t.amount / grandTotal * 100).toFixed(1) : "0",
-    })),
-    [totals, grandTotal, cashByCode]);
+    [...totals].sort((a, b) => b.amount - a.amount).map((t) => {
+      const cost = branchCostMap.get(t.branch_code) ?? 0;
+      const profit = t.amount - cost;
+      return {
+        name: t.branch_name, amount: t.amount, qty: t.qty,
+        cashflow: cashByCode[t.branch_code] ?? 0,
+        grossProfit: profit,
+        margin: t.amount > 0 ? profit / t.amount * 100 : 0,
+        share: grandTotal > 0 ? (t.amount / grandTotal * 100).toFixed(1) : "0",
+      };
+    }),
+    [totals, grandTotal, cashByCode, branchCostMap]);
 
   const catData = useMemo(() => {
     // Use cat2 (product type) directly from summary rows, same as dashboard
@@ -418,13 +436,21 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
                 <Tooltip
                   formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : "Поступления"]}
                 />
-                <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={18}>
+                <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={14}>
                   {branchData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                 </Bar>
-                <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={18} fill="#10b981" opacity={0.75} />
+                <Bar dataKey="cashflow" name="cashflow" radius={[0, 2, 2, 0]} maxBarSize={14} fill="#10b981" opacity={0.75} />
+                {hasCosts && <Bar dataKey="grossProfit" name="grossProfit" radius={[0, 2, 2, 0]} maxBarSize={14} fill="#6366f1" opacity={0.85} />}
               </BarChart>
             </ResponsiveContainer>
           ) : <div className="h-40 flex items-center justify-center text-gray-300 text-sm">Нет данных</div>}
+          {hasCosts && (
+            <div className="flex gap-3 mt-2 flex-wrap text-[10px] text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />Отгрузка</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Поступления</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />Вал. прибыль</span>
+            </div>
+          )}
         </div>
 
         {/* Category donut */}
@@ -446,6 +472,54 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
           ) : <div className="h-48 flex items-center justify-center text-gray-300 text-sm">Нет данных</div>}
         </div>
       </div>
+
+      {/* Валовая прибыль и маржа по филиалам */}
+      {hasCosts && branchData.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp size={14} className="text-indigo-400" />
+            <span className="text-sm font-bold text-gray-800">Валовая прибыль и маржа по филиалам</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 text-[10px] uppercase text-gray-400 font-semibold tracking-wide">
+                  <th className="text-left py-2 pr-3">Филиал</th>
+                  <th className="text-right py-2 px-3">Реализация</th>
+                  <th className="text-right py-2 px-3">С/стоимость</th>
+                  <th className="text-right py-2 px-3">Вал. прибыль</th>
+                  <th className="text-right py-2 pl-3">Маржа</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branchData.map((b, i) => {
+                  const cost = (branchCostMap.get(totals.find(t => t.branch_name === b.name)?.branch_code ?? "") ?? 0);
+                  return (
+                    <tr key={b.name} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/30"}>
+                      <td className="py-2 pr-3 font-semibold text-gray-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: C[i % C.length] }} />
+                        {b.name}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-700 tabular-nums font-bold">{fmt(b.amount)}</td>
+                      <td className="py-2 px-3 text-right text-gray-500 tabular-nums">{cost > 0 ? fmt(cost) : "—"}</td>
+                      <td className={`py-2 px-3 text-right tabular-nums font-bold ${b.grossProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
+                        {cost > 0 ? fmt(b.grossProfit) : "—"}
+                      </td>
+                      <td className="py-2 pl-3 text-right tabular-nums">
+                        {cost > 0 ? (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${b.margin >= 30 ? "bg-green-100 text-green-700" : b.margin >= 15 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>
+                            {b.margin.toFixed(1)}%
+                          </span>
+                        ) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Отгрузки / Потоки денег bar */}
       {grandTotal > 0 && (() => {
@@ -482,15 +556,25 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
 }
 
 // ── TAB 2: Филиалы ────────────────────────────────────────────────────────────
-function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows, debtByBranch, cashFlow }: {
+function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows, debtByBranch, cashFlow, costs }: {
   totals: SalesReportTotal[]; grandTotal: number; tree: PivotNode[]; tmzSummary: TmzSummaryRow[];
   allRows: SalesReportRow[]; bonusRows: SalesReportRow[]; debtByBranch: OsvByBranchRow[]; cashFlow: CashFlowSummaryRow[];
+  costs: Record<string, number>;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const sorted = useMemo(() => [...totals].sort((a, b) => b.amount - a.amount), [totals]);
   const tmzByCode = useMemo(() => Object.fromEntries(tmzSummary.map(r => [r.branch_code, r])), [tmzSummary]);
   const debtByName = useMemo(() => Object.fromEntries(debtByBranch.map(r => [r.branch_name, r])), [debtByBranch]);
   const cashByCode = useMemo(() => Object.fromEntries(cashFlow.map(r => [r.branch_code, r])), [cashFlow]);
+
+  const branchCostMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRows]) {
+      const c = (costs[r.code || r.name] ?? 0) * r.qty;
+      m.set(r.branch_code, (m.get(r.branch_code) ?? 0) + c);
+    }
+    return m;
+  }, [allRows, bonusRows, costs]);
 
   const topProductsByBranch = useMemo(() => {
     const result: Record<string, { name: string; amount: number; qty: number }[]> = {};
@@ -555,7 +639,7 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
                 </div>
               </div>
               {/* Debt + TMZ + Cash */}
-              <div className="grid grid-cols-3 border-t border-b border-gray-100">
+              <div className="grid grid-cols-3 border-t border-gray-100">
                 <div className="px-3 py-2.5 border-r border-gray-100">
                   <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Дебиторка</div>
                   {debt
@@ -575,6 +659,28 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
                     : <div className="text-xs text-gray-300">—</div>}
                 </div>
               </div>
+              {/* Profit + Margin */}
+              {(() => {
+                const cost = branchCostMap.get(t.branch_code) ?? 0;
+                if (cost === 0) return null;
+                const profit = t.amount - cost;
+                const margin = t.amount > 0 ? profit / t.amount * 100 : 0;
+                return (
+                  <div className="grid grid-cols-2 border-t border-gray-100">
+                    <div className="px-3 py-2.5 border-r border-gray-100">
+                      <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Вал. прибыль</div>
+                      <div className={cn("text-xs font-bold tabular-nums", profit >= 0 ? "text-green-600" : "text-red-500")}>{fmt(profit)}</div>
+                      <div className="text-[9px] text-gray-400">С/стоимость: {fmt(cost)}</div>
+                    </div>
+                    <div className="px-3 py-2.5">
+                      <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Маржа</div>
+                      <div className={cn("text-sm font-black tabular-nums", margin >= 30 ? "text-green-600" : margin >= 15 ? "text-yellow-600" : "text-red-500")}>
+                        {margin.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
               {/* Top products */}
               <div className="px-4 py-3">
                 <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Топ продуктов</div>
@@ -624,10 +730,11 @@ function BranchesTab({ totals, grandTotal, tree, tmzSummary, allRows, bonusRows,
 }
 
 // ── TAB 3: Категории ──────────────────────────────────────────────────────────
-function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonusRows, onProductClick }: {
+function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonusRows, onProductClick, costs }: {
   tree: PivotNode[]; bonusTree: PivotNode[]; branches: { code: string; name: string }[];
   branchTotals: Record<string, Cell>; allRows: SalesReportRow[];
   bonusRows: SalesReportRow[]; onProductClick: (r: SalesReportRow) => void;
+  costs: Record<string, number>;
 }) {
   const [open, setOpen] = useState(new Set<string>());
   const [openLeaf, setOpenLeaf] = useState(new Set<string>());
@@ -687,6 +794,30 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
   const hasFilter = !!(filterBranch || filterCat1 || filterSearch);
 
   const grand0: Cell = { qty: tree.reduce((s, n) => s + n.total.qty, 0), amount: tree.reduce((s, n) => s + n.total.amount, 0) };
+
+  // Per-category cost map: "cat1|cat2|cat3" -> totalCost
+  const catCostMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of [...allRows, ...bonusRows]) {
+      const unitCost = costs[r.code || r.name] ?? 0;
+      const rowCost = r.qty * unitCost;
+      const c1 = r.cat1 ?? "";
+      m.set(c1, (m.get(c1) ?? 0) + rowCost);
+      const c2 = `${c1}|${r.cat2 ?? ""}`;
+      m.set(c2, (m.get(c2) ?? 0) + rowCost);
+      const c3 = `${c2}|${r.cat3 ?? ""}`;
+      m.set(c3, (m.get(c3) ?? 0) + rowCost);
+    }
+    return m;
+  }, [allRows, bonusRows, costs]);
+
+  const hasCosts = useMemo(() => catCostMap.size > 0 && [...catCostMap.values()].some(v => v > 0), [catCostMap]);
+
+  function getNodeCost(row: PivotNode): number {
+    if (row.level === 0) return catCostMap.get(row.cat1) ?? 0;
+    if (row.level === 1) return catCostMap.get(`${row.cat1}|${row.cat2 ?? ""}`) ?? 0;
+    return catCostMap.get(`${row.cat1}|${row.cat2 ?? ""}|${row.cat3 ?? ""}`) ?? 0;
+  }
 
   function getLeafProducts(node: PivotNode) {
     const map = new Map<string, SalesReportRow & { _qty: number; _amt: number }>();
@@ -828,6 +959,10 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
         const isBranchOpen = openBranch.has(row.id);
         const pl = row.level * 20 + 16;
         const products = (!hasKids && isLeafOpen) ? getLeafProducts(row) : [];
+        const nodeCost = hasCosts ? getNodeCost(row) : 0;
+        const nodeAmt = row.total.amount;
+        const nodeProfit = nodeAmt - nodeCost;
+        const nodeMargin = nodeAmt > 0 && nodeCost > 0 ? nodeProfit / nodeAmt * 100 : null;
 
         return (
           <div key={row.id} className={row.level === 0 ? "border-t-2 border-gray-100" : ""}>
@@ -851,6 +986,11 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                 <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(getCell(row).amount)}</div>
                 {row.level === 0 && grand.amount > 0 && (
                   <div className="text-[9px] text-gray-400">{(getCell(row).amount / grand.amount * 100).toFixed(1)}%</div>
+                )}
+                {nodeMargin !== null && (
+                  <div className={cn("text-[9px] font-semibold", nodeMargin >= 30 ? "text-green-500" : nodeMargin >= 15 ? "text-yellow-500" : "text-red-400")}>
+                    Маржа {nodeMargin.toFixed(1)}%
+                  </div>
                 )}
               </div>
               <div className="text-right pr-4 py-2.5">
@@ -1484,12 +1624,12 @@ export default function SalesPage() {
           </div>
         </div>
       ) : activeTab === "overview" ? (
-        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} cashFlow={cashFlow} summary={summary} bonusSummary={bonusSummary} />
+        <OverviewTab salesTree={salesTree} totals={combinedTotals} grandTotal={combinedGrandTotal} bonusTotal={bonusTotal} tmzTotal={tmzTotal} realisationTotal={grandTotal} cashFlow={cashFlow} summary={summary} bonusSummary={bonusSummary} allRows={allRows} bonusRows={bonusRows} costs={costs} />
       ) : activeTab === "branches" ? (
-        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} cashFlow={cashFlow} />
+        <BranchesTab totals={combinedTotals} grandTotal={combinedGrandTotal} tree={salesTree} tmzSummary={tmzSummary} allRows={allRows} bonusRows={bonusRows} debtByBranch={debtByBranch} cashFlow={cashFlow} costs={costs} />
       ) : activeTab === "categories" ? (
         <CategoriesTab tree={tree} bonusTree={bonusTree} branches={orderedBranches} branchTotals={branchTotals}
-          allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} />
+          allRows={allRows} bonusRows={bonusRows} onProductClick={setSelectedProduct} costs={costs} />
       ) : (
         <ProductsTab allRows={allRows} bonusRows={bonusRows} tree={tree} branches={orderedBranches} onProductClick={setSelectedProduct}
           costs={costs}
