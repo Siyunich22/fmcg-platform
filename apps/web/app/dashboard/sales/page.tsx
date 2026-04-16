@@ -944,10 +944,11 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
 
       {/* Column headers */}
       <div className="grid gap-0 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
-        style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+        style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
         <div>Категория</div>
         <div className="text-right">{filterBranch ? branches.find(b => b.code === filterBranch)?.name : "Итого"}</div>
         <div className="text-right">Кол-во</div>
+        <div className="text-right">Вал. прибыль</div>
         <div className="pl-3">Распределение</div>
       </div>
 
@@ -969,7 +970,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
             {/* Main row */}
             <div className={cn("grid items-center border-b border-gray-50 hover:bg-gray-50/60 group",
               row.level === 1 ? "bg-gray-50/30" : "bg-white")}
-              style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+              style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
               <button className="flex items-center gap-1.5 py-2.5 text-left min-w-0"
                 style={{ paddingLeft: pl, paddingRight: 8 }}
                 onClick={() => hasKids ? setOpen(s => tog(s, row.id)) : setOpenLeaf(s => tog(s, row.id))}>
@@ -995,6 +996,13 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
               </div>
               <div className="text-right pr-4 py-2.5">
                 <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(getCell(row).qty)}</div>
+              </div>
+              <div className="text-right pr-4 py-2.5">
+                {nodeCost > 0 ? (
+                  <div className={cn("text-xs font-bold tabular-nums", nodeProfit >= 0 ? "text-green-600" : "text-red-500")}>{fmt(nodeProfit)}</div>
+                ) : (
+                  <div className="text-[10px] text-gray-300">—</div>
+                )}
               </div>
               <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
                 onClick={() => setOpenBranch(s => tog(s, row.id))}>
@@ -1038,27 +1046,40 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                 if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
                 perBranch[r.branch_code].qty += r.qty; perBranch[r.branch_code].amount += r.amount;
               }
-              return (
-                <div key={`${row.id}_${p.code}_${pi}`}
-                  className={cn("grid items-center border-b border-gray-50 hover:bg-blue-50/30", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}
-                  style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
-                  <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
-                    <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover/p:bg-blue-500 flex-shrink-0" />
-                      <span className="text-[11px] text-gray-600 group-hover/p:text-blue-700 truncate">{p.name}</span>
-                      <span className="text-[9px] text-blue-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
-                    </button>
+              {(() => {
+                const unitCost = costs[p.code || p.name] ?? 0;
+                const pCost = p.qty * unitCost;
+                const pProfit = p.amount - pCost;
+                return (
+                  <div key={`${row.id}_${p.code}_${pi}`}
+                    className={cn("grid items-center border-b border-gray-50 hover:bg-blue-50/30", pi % 2 === 0 ? "bg-white" : "bg-gray-50/20")}
+                    style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
+                    <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
+                      <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-200 group-hover/p:bg-blue-500 flex-shrink-0" />
+                        <span className="text-[11px] text-gray-600 group-hover/p:text-blue-700 truncate">{p.name}</span>
+                        <span className="text-[9px] text-blue-400 opacity-0 group-hover/p:opacity-100 flex-shrink-0 ml-1">↗</span>
+                      </button>
+                    </div>
+                    <div className="text-right pr-4 py-1.5">
+                      <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
+                    </div>
+                    <div className="text-right pr-4 py-1.5">
+                      <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                    </div>
+                    <div className="text-right pr-4 py-1.5">
+                      {unitCost > 0 ? (
+                        <div className={cn("text-[11px] font-semibold tabular-nums", pProfit >= 0 ? "text-green-600" : "text-red-500")}>{fmt(pProfit)}</div>
+                      ) : (
+                        <div className="text-[10px] text-gray-300">—</div>
+                      )}
+                    </div>
+                    <div className="pl-3 pr-3 py-1.5">
+                      <DistBar byBranch={perBranch} total={p.amount} />
+                    </div>
                   </div>
-                  <div className="text-right pr-4 py-1.5">
-                    <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
-                  </div>
-                  <div className="text-right pr-4 py-1.5">
-                    <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
-                  </div>
-                  <div className="pl-3 pr-3 py-1.5">
-                    <DistBar byBranch={perBranch} total={p.amount} />
-                  </div>
-                </div>
+                );
+              })()
               );
             })}
           </div>
@@ -1126,10 +1147,11 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
           {/* Column headers */}
           {bonusSectionOpen && (
             <div className="grid gap-0 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
-              style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+              style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
               <div>Категория</div>
               <div className="text-right">{filterBranch ? branches.find(b => b.code === filterBranch)?.name : "Итого"}</div>
               <div className="text-right">Кол-во</div>
+              <div className="text-right">Вал. прибыль</div>
               <div className="pl-3">Распределение</div>
             </div>
           )}
@@ -1147,7 +1169,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
               <div key={row.id} className={row.level === 0 ? "border-t-2 border-amber-50" : ""}>
                 <div className={cn("grid items-center border-b border-gray-50 hover:bg-amber-50/40 group",
                   row.level === 1 ? "bg-gray-50/30" : "bg-white")}
-                  style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+                  style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
                   <button className="flex items-center gap-1.5 py-2.5 text-left min-w-0"
                     style={{ paddingLeft: pl, paddingRight: 8 }}
                     onClick={() => hasKids ? setBonusOpen(s => tog2(s, row.id)) : setBonusLeaf(s => tog2(s, row.id))}>
@@ -1168,6 +1190,9 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                   </div>
                   <div className="text-right pr-4 py-2.5">
                     <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(getBonusCell(row).qty)}</div>
+                  </div>
+                  <div className="text-right pr-4 py-2.5">
+                    <div className="text-[10px] text-gray-300">—</div>
                   </div>
                   <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
                     onClick={() => setBonusBranch(s => tog2(s, row.id))}>
@@ -1214,7 +1239,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                   return (
                     <div key={`bonus_${row.id}_${p.code}_${pi}`}
                       className={cn("grid items-center border-b border-gray-50 hover:bg-amber-50/30", pi % 2 === 0 ? "bg-white" : "bg-amber-50/10")}
-                      style={{ gridTemplateColumns: "1fr 160px 90px 180px" }}>
+                      style={{ gridTemplateColumns: "1fr 150px 90px 120px 180px" }}>
                       <div style={{ paddingLeft: pl + 20, paddingRight: 8 }} className="py-1.5 min-w-0">
                         <button className="flex items-center gap-1.5 text-left group/p w-full min-w-0" onClick={() => onProductClick(p)}>
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-200 group-hover/p:bg-amber-500 flex-shrink-0" />
@@ -1227,6 +1252,9 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                       </div>
                       <div className="text-right pr-4 py-1.5">
                         <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                      </div>
+                      <div className="text-right pr-4 py-1.5">
+                        <div className="text-[10px] text-gray-300">—</div>
                       </div>
                       <div className="pl-3 pr-3 py-1.5">
                         <DistBar byBranch={perBranch} total={p.amount} />
