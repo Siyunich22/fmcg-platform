@@ -2,7 +2,7 @@ from datetime import date as date_type
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
@@ -300,6 +300,44 @@ async def get_stats(
             }
             for r in by_cat1.all()
         ],
+    }
+
+
+@router.post("/normalize")
+async def normalize_categories(db: AsyncSession = Depends(get_db)):
+    """
+    Normalize categories in existing data:
+    1. Strip 'БОНУСЫ' suffix from cat1/cat2, mark those rows as is_bonus=TRUE
+    2. Normalize 'Кухмастер' → 'КУХМАСТЕР' (case normalization)
+    """
+    # 1. Strip БОНУСЫ suffix from cat1 and mark as bonus
+    r1 = await db.execute(text(r"""
+        UPDATE sales_report_entries
+        SET
+            cat1 = TRIM(REGEXP_REPLACE(cat1, '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$', '', 'g')),
+            is_bonus = TRUE
+        WHERE cat1 ~* '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$'
+    """))
+
+    # 2. Strip БОНУСЫ suffix from cat2 (keep is_bonus already set)
+    await db.execute(text(r"""
+        UPDATE sales_report_entries
+        SET cat2 = TRIM(REGEXP_REPLACE(cat2, '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$', '', 'g'))
+        WHERE cat2 ~* '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$'
+    """))
+
+    # 3. Normalize Кухмастер case
+    r3 = await db.execute(text(r"""
+        UPDATE sales_report_entries
+        SET cat1 = 'КУХМАСТЕР'
+        WHERE UPPER(cat1) = 'КУХМАСТЕР'
+    """))
+
+    await db.commit()
+    return {
+        "ok": True,
+        "bonus_rows_fixed": r1.rowcount,
+        "kuhmaster_rows_fixed": r3.rowcount,
     }
 
 

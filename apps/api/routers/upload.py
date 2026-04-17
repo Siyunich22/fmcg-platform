@@ -602,6 +602,10 @@ async def upload_sales_report(
         await db.rollback()
         raise HTTPException(500, f"Ошибка сохранения: {exc}") from exc
 
+    # Auto-normalize categories (strip БОНУСЫ, fix case)
+    from routers.sales_report import normalize_categories as _normalize
+    await _normalize(db)
+
     branches = sorted({e["branch_code"] for e in entries})
     return {
         "ok": True,

@@ -4,12 +4,13 @@ import { useDropzone } from "react-dropzone";
 import {
   useSalesReportDates, useSalesReportBranches, useSalesReportSummary,
   useSalesReportRows, useSalesReportTotals, useUploadSalesReport,
+  useNormalizeSalesReport,
   type SalesReportRow, type SalesReportSummaryRow,
 } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Upload, CheckCircle, XCircle, Loader2,
-  ChevronRight, ChevronDown, Search, X,
+  ChevronRight, ChevronDown, Search, X, Wand2,
 } from "lucide-react";
 
 function fmt(n: number) {
@@ -279,6 +280,8 @@ export default function SalesReportPage() {
   const [selectedCat2, setSelectedCat2] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const normalize = useNormalizeSalesReport();
+  const [normMsg, setNormMsg] = useState("");
 
   useEffect(() => {
     if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
@@ -336,11 +339,26 @@ export default function SalesReportPage() {
               showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700")}>
             <Upload size={14} />Загрузить файл
           </button>
+          <button
+            disabled={normalize.isPending}
+            onClick={async () => {
+              setNormMsg("");
+              const res = await normalize.mutateAsync();
+              setNormMsg(`✓ Исправлено: ${res.bonus_rows_fixed} строк бонусов, ${res.kuhmaster_rows_fixed} строк КУХМАСТЕР`);
+              setTimeout(() => setNormMsg(""), 5000);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+            {normalize.isPending ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+            Нормализовать
+          </button>
         </div>
       </div>
 
       {showUpload && (
         <UploadBlock onUploaded={() => { setShowUpload(false); }} />
+      )}
+      {normMsg && (
+        <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2">{normMsg}</div>
       )}
 
       {/* Search bar */}

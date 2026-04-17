@@ -37,6 +37,14 @@ SKIP_HEADER_CODES = {"00000000002"}
 
 BONUS_CODE = "00000000012"
 
+# Regex to detect and strip "БОНУСЫ / Бонусы / бонусы" suffix (case-insensitive)
+_BONUS_SUFFIX_RE = re.compile(r'\s+бонус[ыь]?\s*$', re.IGNORECASE)
+
+# Cat1 names to normalize (lowercase key → canonical value)
+_CAT1_NORMALIZE: dict[str, str] = {
+    "кухмастер": "КУХМАСТЕР",
+}
+
 RU_MONTHS = {
     "январ": 1, "феврал": 2, "март": 3, "апрел": 4,
     "май": 5, "мая": 5, "июн": 6, "июл": 7, "август": 8,
@@ -156,18 +164,27 @@ def parse_sales_report(filepath: str) -> list[dict]:
         sorted_levels = sorted(k for k in ctx.keys() if k < indent)
         if in_bonus:
             # Skip the БОНУСЫ level (indent=2) — use indent=4+ as categories
-            # This puts масло/варенье/чай under their own cat names
             cats = [ctx[k] for k in sorted_levels if k >= 4]
         else:
             cats = [ctx[k] for k in sorted_levels if k >= 2]  # skip indent=0 (ТОВАРЫ)
 
-        # Strip " Бонусы" / " бонусы" suffix from category names
+        # Strip "БОНУСЫ / Бонусы" suffix (case-insensitive) from category names
         def _clean(s: str | None) -> str | None:
             if s is None:
                 return None
-            return re.sub(r'\s+[Бб]онус[ыь]?\s*$', '', s).strip() or s
+            return _BONUS_SUFFIX_RE.sub('', s).strip() or s
 
-        cat1 = _clean(cats[0]) if len(cats) > 0 else None
+        # Normalize cat1 case variants (e.g. "Кухмастер" → "КУХМАСТЕР")
+        def _normalize(s: str | None) -> str | None:
+            if s is None:
+                return None
+            return _CAT1_NORMALIZE.get(s.strip().lower(), s)
+
+        # Detect bonus-by-category: top-level category ending with "БОНУСЫ"
+        orig_cat1 = cats[0] if cats else None
+        is_cat_bonus = bool(orig_cat1 and _BONUS_SUFFIX_RE.search(orig_cat1))
+
+        cat1 = _normalize(_clean(cats[0])) if len(cats) > 0 else None
         cat2 = _clean(cats[1]) if len(cats) > 1 else None
         cat3 = _clean(cats[2]) if len(cats) > 2 else None
         cat4 = _clean(cats[3]) if len(cats) > 3 else None
@@ -183,7 +200,7 @@ def parse_sales_report(filepath: str) -> list[dict]:
                 "cat2": cat2,
                 "cat3": cat3,
                 "cat4": cat4,
-                "is_bonus": in_bonus,
+                "is_bonus": in_bonus or is_cat_bonus,
                 "branch_code": bc,
                 "qty": qty,
                 "amount": amt,

@@ -549,6 +549,18 @@ export const useSetFot = () => {
   });
 };
 
+export const useNormalizeSalesReport = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; bonus_rows_fixed: number; kuhmaster_rows_fixed: number }, Error, void>({
+    mutationFn: () => api.post("/api/sales-report/normalize").then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-report-summary"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-rows"] });
+      qc.invalidateQueries({ queryKey: ["sales-report-dates"] });
+    },
+  });
+};
+
 // ── Cash Flow hooks ──────────────────────────────────────────────────────────
 
 export interface CashFlowSummaryRow {
