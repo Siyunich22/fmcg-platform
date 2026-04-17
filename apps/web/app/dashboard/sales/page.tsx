@@ -1114,8 +1114,27 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
           if (!map.has(k)) map.set(k, { ...r, _qty: 0, _amt: 0 });
           const g = map.get(k)!; g._qty += r.qty; g._amt += r.amount;
         }
-        return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.amount - a.amount);
+        return [...map.values()].map(g => ({ ...g, qty: g._qty, amount: g._amt })).sort((a, b) => b.qty - a.qty);
       }
+
+      // Compute cost loss for a bonus node (sum of qty × unitCost for matching rows)
+      function getNodeLoss(node: PivotNode): number {
+        let total = 0;
+        for (const r of bonusRows) {
+          if (r.cat1 !== node.cat1) continue;
+          if (node.cat2 !== null && r.cat2 !== node.cat2) continue;
+          if (node.cat3 !== null && r.cat3 !== node.cat3) continue;
+          if (filterBranch && r.branch_code !== filterBranch) continue;
+          const uc = costs[r.code || r.name] ?? 0;
+          total += r.qty * uc;
+        }
+        return total;
+      }
+
+      const bonusTotalLoss = bonusRows
+        .filter(r => !filterBranch || r.branch_code === filterBranch)
+        .reduce((s, r) => s + r.qty * (costs[r.code || r.name] ?? 0), 0);
+      const hasBonusCosts = bonusTotalLoss > 0;
 
       return (
         <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
@@ -1126,11 +1145,17 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
             <span className="flex-shrink-0 text-amber-500">
               {bonusSectionOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
             </span>
-            <span className="text-sm font-bold text-amber-800 flex-1 text-left">Бонусы</span>
+            <span className="text-sm font-bold text-amber-800 flex-1 text-left">Бонусы и акции</span>
             <div className="text-right">
               <div className="text-base font-black text-amber-700 tabular-nums">{fmt(bonusGrandAmt)}</div>
               <div className="text-[10px] text-amber-500 tabular-nums">{fmtQ(bonusGrandQty)}</div>
             </div>
+            {hasBonusCosts && (
+              <div className="text-right">
+                <div className="text-sm font-bold text-red-600 tabular-nums">-{fmt(bonusTotalLoss)}</div>
+                <div className="text-[9px] text-red-400">потери</div>
+              </div>
+            )}
             <div className="w-40">
               <DistBar byBranch={bonusTree.reduce((acc, n) => {
                 for (const [k, v] of Object.entries(n.byBranch)) {
@@ -1138,7 +1163,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                   acc[k].qty += v.qty; acc[k].amount += v.amount;
                 }
                 return acc;
-              }, {} as Record<string, Cell>)} total={bonusGrandAmt} />
+              }, {} as Record<string, Cell>)} total={bonusGrandQty} />
             </div>
           </button>
 
@@ -1149,7 +1174,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
               <div>Категория</div>
               <div className="text-right">{filterBranch ? branches.find(b => b.code === filterBranch)?.name : "Итого"}</div>
               <div className="text-right">Кол-во</div>
-              <div className="text-right">Вал. прибыль</div>
+              <div className="text-right">Потери (себест.)</div>
               <div className="pl-3">Распределение</div>
             </div>
           )}
@@ -1162,6 +1187,7 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
             const isBranchOpen2 = bonusBranch.has(row.id);
             const pl = row.level * 20 + 16;
             const products = (!hasKids && isLeafOpen2) ? getBonusProducts(row) : [];
+            const nodeLoss = getNodeLoss(row);
 
             return (
               <div key={row.id} className={row.level === 0 ? "border-t-2 border-amber-50" : ""}>
@@ -1181,21 +1207,25 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                     </span>
                   </button>
                   <div className="text-right pr-4 py-2.5">
-                    <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmt(getBonusCell(row).amount)}</div>
-                    {row.level === 0 && bonusGrandAmt > 0 && (
-                      <div className="text-[9px] text-gray-400">{(getBonusCell(row).amount / bonusGrandAmt * 100).toFixed(1)}%</div>
+                    <div className={cn("text-xs font-bold tabular-nums", row.level === 0 ? "text-gray-900" : "text-gray-700")}>{fmtQ(getBonusCell(row).qty)}</div>
+                    {row.level === 0 && bonusGrandQty > 0 && (
+                      <div className="text-[9px] text-gray-400">{(getBonusCell(row).qty / bonusGrandQty * 100).toFixed(1)}%</div>
                     )}
                   </div>
                   <div className="text-right pr-4 py-2.5">
-                    <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(getBonusCell(row).qty)}</div>
+                    <div className="text-[10px] text-gray-400 tabular-nums">{fmt(getBonusCell(row).amount)}</div>
                   </div>
                   <div className="text-right pr-4 py-2.5">
-                    <div className="text-[10px] text-gray-300">—</div>
+                    {nodeLoss > 0 ? (
+                      <div className="text-[11px] font-semibold text-red-500 tabular-nums">-{fmt(nodeLoss)}</div>
+                    ) : (
+                      <div className="text-[10px] text-gray-300">—</div>
+                    )}
                   </div>
                   <button className="pl-3 pr-3 py-2.5 flex items-center gap-1.5 group/bar"
                     onClick={() => setBonusBranch(s => tog2(s, row.id))}>
                     <div className="flex-1 min-w-0">
-                      <DistBar byBranch={row.byBranch} total={row.total.amount} />
+                      <DistBar byBranch={row.byBranch} total={row.total.qty} />
                     </div>
                     <span className={cn("flex-shrink-0 transition-colors", isBranchOpen2 ? "text-amber-400" : "text-gray-200 group-hover/bar:text-gray-400")}>
                       {isBranchOpen2 ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -1209,15 +1239,15 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                       {branches.map((b, bi) => {
                         const c = row.byBranch[b.code];
-                        if (!c || c.amount === 0) return null;
-                        const pct = row.total.amount > 0 ? c.amount / row.total.amount * 100 : 0;
+                        if (!c || c.qty === 0) return null;
+                        const pct = row.total.qty > 0 ? c.qty / row.total.qty * 100 : 0;
                         return (
                           <div key={b.code} className="flex items-start gap-2 bg-white rounded-lg px-2.5 py-2 border border-amber-100 shadow-sm">
                             <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: C[bi % C.length] }} />
                             <div className="min-w-0 flex-1">
                               <div className="text-[10px] text-gray-500 font-medium truncate">{b.name}</div>
-                              <div className="text-[11px] font-bold text-gray-900 tabular-nums">{fmt(c.amount)}</div>
-                              <div className="text-[9px] text-gray-400 tabular-nums">{fmtQ(c.qty)} · {pct.toFixed(1)}%</div>
+                              <div className="text-[11px] font-bold text-gray-900 tabular-nums">{fmtQ(c.qty)} шт</div>
+                              <div className="text-[9px] text-gray-400 tabular-nums">{pct.toFixed(1)}%</div>
                             </div>
                           </div>
                         );
@@ -1230,10 +1260,12 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                 {!hasKids && isLeafOpen2 && products.map((p, pi) => {
                   const perBranch: Record<string, { qty: number; amount: number }> = {};
                   for (const r of bonusRows) {
-                    if (r.code !== p.code) continue;
+                    if ((r.code || r.name) !== (p.code || p.name)) continue;
                     if (!perBranch[r.branch_code]) perBranch[r.branch_code] = { qty: 0, amount: 0 };
                     perBranch[r.branch_code].qty += r.qty; perBranch[r.branch_code].amount += r.amount;
                   }
+                  const pUc = costs[p.code || p.name] ?? 0;
+                  const pLoss = p.qty * pUc;
                   return (
                     <div key={`bonus_${row.id}_${p.code}_${pi}`}
                       className={cn("grid items-center border-b border-gray-50 hover:bg-amber-50/30", pi % 2 === 0 ? "bg-white" : "bg-amber-50/10")}
@@ -1246,16 +1278,20 @@ function CategoriesTab({ tree, bonusTree, branches, branchTotals, allRows, bonus
                         </button>
                       </div>
                       <div className="text-right pr-4 py-1.5">
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmt(p.amount)}</div>
+                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">{fmtQ(p.qty)} шт</div>
                       </div>
                       <div className="text-right pr-4 py-1.5">
-                        <div className="text-[10px] text-gray-400 tabular-nums">{fmtQ(p.qty)}</div>
+                        <div className="text-[10px] text-gray-400 tabular-nums">{fmt(p.amount)}</div>
                       </div>
                       <div className="text-right pr-4 py-1.5">
-                        <div className="text-[10px] text-gray-300">—</div>
+                        {pLoss > 0 ? (
+                          <div className="text-[11px] font-semibold text-red-500 tabular-nums">-{fmt(pLoss)}</div>
+                        ) : (
+                          <div className="text-[10px] text-gray-300">—</div>
+                        )}
                       </div>
                       <div className="pl-3 pr-3 py-1.5">
-                        <DistBar byBranch={perBranch} total={p.amount} />
+                        <DistBar byBranch={perBranch} total={p.qty} />
                       </div>
                     </div>
                   );

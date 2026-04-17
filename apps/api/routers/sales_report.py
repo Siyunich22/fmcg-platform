@@ -367,10 +367,20 @@ async def normalize_categories(db: AsyncSession = Depends(get_db)):
                 {"new_cat": new_cat, "old_cat": c},
             )
 
+    # Mark products with " АКЦИЯ" suffix as bonus
+    r_akciya = await db.execute(
+        text("UPDATE sales_report_entries SET is_bonus = TRUE WHERE name ILIKE '% АКЦИЯ' AND is_bonus = FALSE")
+    )
+
+    # Mark Техника category as bonus
+    r_tech = await db.execute(
+        text("UPDATE sales_report_entries SET is_bonus = TRUE WHERE cat1 = 'Техника' AND is_bonus = FALSE")
+    )
+
     await db.commit()
     return {
         "ok": True,
-        "bonus_rows_fixed": bonus_count,
+        "bonus_rows_fixed": bonus_count + r_akciya.rowcount + r_tech.rowcount,
         "kuhmaster_rows_fixed": kuhmaster_count,
     }
 
