@@ -12,6 +12,7 @@ import {
   useTmzSummary, useOsvDates, useOsvByBranch,
   useCashFlowSummary, useUploadCashFlow,
   useProductCosts, useUpsertProductCost, useFot, useSetFot,
+  useNormalizeSalesReport,
   type SalesReportRow, type SalesReportSummaryRow, type SalesReportTotal,
   type TmzSummaryRow, type OsvByBranchRow, type CashFlowSummaryRow,
 } from "@/hooks/useApi";
@@ -1462,6 +1463,10 @@ export default function SalesPage() {
   useEffect(() => {
     if (fotData?.pct != null && fotPctLocal === "") setFotPctLocal(String(fotData.pct));
   }, [fotData]);
+
+  // Auto-normalize categories on mount (idempotent)
+  const normalize = useNormalizeSalesReport();
+  useEffect(() => { normalize.mutate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Paid-only tree (for Categories tab)
   const salesTree = useMemo(() => buildPivotTree(summary), [summary]);

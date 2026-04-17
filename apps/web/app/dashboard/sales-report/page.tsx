@@ -283,6 +283,19 @@ export default function SalesReportPage() {
   const normalize = useNormalizeSalesReport();
   const [normMsg, setNormMsg] = useState("");
 
+  // Auto-normalize on first load (idempotent — safe to run each visit)
+  useEffect(() => {
+    normalize.mutate(undefined, {
+      onSuccess: (res) => {
+        if (res.bonus_rows_fixed > 0 || res.kuhmaster_rows_fixed > 0) {
+          setNormMsg(`✓ Категории нормализованы: ${res.bonus_rows_fixed} строк бонусов, ${res.kuhmaster_rows_fixed} КУХМАСТЕР`);
+          setTimeout(() => setNormMsg(""), 5000);
+        }
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
   }, [dates, selectedDate]);

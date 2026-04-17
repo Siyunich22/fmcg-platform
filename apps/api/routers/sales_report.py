@@ -308,36 +308,70 @@ async def normalize_categories(db: AsyncSession = Depends(get_db)):
     """
     Normalize categories in existing data:
     1. Strip 'БОНУСЫ' suffix from cat1/cat2, mark those rows as is_bonus=TRUE
-    2. Normalize 'Кухмастер' → 'КУХМАСТЕР' (case normalization)
+    2. Normalize case variants of КУХМАСТЕР
     """
-    # 1. Strip БОНУСЫ suffix from cat1 and mark as bonus
-    r1 = await db.execute(text(r"""
-        UPDATE sales_report_entries
-        SET
-            cat1 = TRIM(REGEXP_REPLACE(cat1, '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$', '', 'g')),
-            is_bonus = TRUE
-        WHERE cat1 ~* '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$'
-    """))
+    from sqlalchemy import update, case as sa_case
 
-    # 2. Strip БОНУСЫ suffix from cat2 (keep is_bonus already set)
-    await db.execute(text(r"""
-        UPDATE sales_report_entries
-        SET cat2 = TRIM(REGEXP_REPLACE(cat2, '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$', '', 'g'))
-        WHERE cat2 ~* '\s+[Бб][Оо][Нн][Уу][Сс][Ыы]?\s*$'
-    """))
+    # Fetch distinct cat1 values that need normalizing
+    r_cat1 = await db.execute(
+        select(SalesReportEntry.cat1).distinct().where(SalesReportEntry.cat1.isnot(None))
+    )
+    all_cat1 = [row[0] for row in r_cat1.all()]
 
-    # 3. Normalize Кухмастер case
-    r3 = await db.execute(text(r"""
-        UPDATE sales_report_entries
-        SET cat1 = 'КУХМАСТЕР'
-        WHERE UPPER(cat1) = 'КУХМАСТЕР'
-    """))
+    suffix = "БОНУСЫ"
+    bonus_cats = [c for c in all_cat1 if c.upper().rstrip().endswith(suffix)]
+    kuhmaster_cats = [c for c in all_cat1 if c.upper() == "КУХМАСТЕР" and c != "КУХМАСТЕР"]
+
+    bonus_count = 0
+    for cat in bonus_cats:
+        cleaned = cat.upper().rstrip()
+        # Strip the suffix and any trailing space
+        new_cat = cat[:len(cat) - len(cat) + len(cat.rstrip())].rstrip()
+        # Find where БОНУСЫ starts (case-insensitive)
+        upper = cat.upper()
+        idx = upper.rfind(" " + suffix)
+        if idx == -1:
+            idx = upper.rfind(suffix)
+        new_cat = cat[:idx].strip() if idx >= 0 else cat
+
+        r = await db.execute(
+            text("""
+                UPDATE sales_report_entries
+                SET cat1 = :new_cat, is_bonus = TRUE
+                WHERE cat1 = :old_cat
+            """),
+            {"new_cat": new_cat, "old_cat": cat},
+        )
+        bonus_count += r.rowcount
+
+    kuhmaster_count = 0
+    for cat in kuhmaster_cats:
+        r = await db.execute(
+            text("UPDATE sales_report_entries SET cat1 = 'КУХМАСТЕР' WHERE cat1 = :old_cat"),
+            {"old_cat": cat},
+        )
+        kuhmaster_count += r.rowcount
+
+    # Also strip БОНУСЫ from cat2
+    r_cat2 = await db.execute(
+        select(SalesReportEntry.cat2).distinct().where(SalesReportEntry.cat2.isnot(None))
+    )
+    for row in r_cat2.all():
+        c = row[0]
+        upper = c.upper()
+        idx = upper.rfind(" " + suffix)
+        if idx >= 0:
+            new_cat = c[:idx].strip()
+            await db.execute(
+                text("UPDATE sales_report_entries SET cat2 = :new_cat WHERE cat2 = :old_cat"),
+                {"new_cat": new_cat, "old_cat": c},
+            )
 
     await db.commit()
     return {
         "ok": True,
-        "bonus_rows_fixed": r1.rowcount,
-        "kuhmaster_rows_fixed": r3.rowcount,
+        "bonus_rows_fixed": bonus_count,
+        "kuhmaster_rows_fixed": kuhmaster_count,
     }
 
 
