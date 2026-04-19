@@ -711,8 +711,10 @@ export const useDeletePnlExpenseCategory = () => {
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────
-export interface RentSetting {
+export interface RentItem {
+  id: number;
   branch_code: string;
+  label: string;
   area_sqm: number;
   price_per_sqm: number;
   monthly_rent: number;
@@ -720,20 +722,19 @@ export interface RentSetting {
 }
 
 export const useRentSettings = () =>
-  useQuery<RentSetting[]>({
+  useQuery<RentItem[]>({
     queryKey: ["settings", "rent"],
     queryFn: () => api.get("/api/pnl/settings/rent").then((r) => r.data),
   });
 
-export const useUpsertRentSetting = () => {
+export const useCreateRentItem = () => {
   const qc = useQueryClient();
   return useMutation<
-    { ok: boolean },
+    { ok: boolean; id: number },
     Error,
-    { branch_code: string; area_sqm: number; price_per_sqm: number; notes?: string }
+    { branch_code: string; label: string; area_sqm: number; price_per_sqm: number; notes?: string }
   >({
-    mutationFn: ({ branch_code, ...body }) =>
-      api.put(`/api/pnl/settings/rent/${branch_code}`, body).then((r) => r.data),
+    mutationFn: (body) => api.post("/api/pnl/settings/rent", body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings", "rent"] });
       qc.invalidateQueries({ queryKey: ["pnl-summary"] });
@@ -741,11 +742,25 @@ export const useUpsertRentSetting = () => {
   });
 };
 
-export const useDeleteRentSetting = () => {
+export const useUpdateRentItem = () => {
   const qc = useQueryClient();
-  return useMutation<{ ok: boolean }, Error, string>({
-    mutationFn: (branch_code) =>
-      api.delete(`/api/pnl/settings/rent/${branch_code}`).then((r) => r.data),
+  return useMutation<
+    { ok: boolean },
+    Error,
+    { id: number; branch_code: string; label: string; area_sqm: number; price_per_sqm: number; notes?: string }
+  >({
+    mutationFn: ({ id, ...body }) => api.put(`/api/pnl/settings/rent/${id}`, body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "rent"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useDeleteRentItem = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, number>({
+    mutationFn: (id) => api.delete(`/api/pnl/settings/rent/${id}`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings", "rent"] });
       qc.invalidateQueries({ queryKey: ["pnl-summary"] });

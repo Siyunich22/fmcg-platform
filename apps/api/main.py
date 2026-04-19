@@ -17,6 +17,14 @@ async def lifespan(app: FastAPI):
         await conn.execute(text(
             "UPDATE sales_report_entries SET is_bonus = FALSE WHERE is_bonus IS NULL"
         ))
+        # Migrate old single-row rent_settings → multi-row rent_items (run once)
+        await conn.execute(text("""
+            INSERT INTO rent_items (branch_code, label, area_sqm, price_per_sqm, notes)
+            SELECT branch_code, 'Аренда', area_sqm, price_per_sqm, notes
+            FROM rent_settings
+            WHERE (area_sqm > 0 OR price_per_sqm > 0)
+              AND branch_code NOT IN (SELECT DISTINCT branch_code FROM rent_items)
+        """))
     yield
     # Shutdown
     await engine.dispose()

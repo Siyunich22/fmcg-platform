@@ -236,9 +236,21 @@ class FotSetting(Base):
 
 
 class RentSetting(Base):
-    """Rent setting per branch: area × price/m² = monthly rent auto-filled in P&L."""
+    """Legacy single-row rent per branch — kept for migration only."""
     __tablename__ = "rent_settings"
     branch_code = Column(String(20), primary_key=True)
+    area_sqm = Column(Numeric(10, 2), default=0)
+    price_per_sqm = Column(Numeric(14, 2), default=0)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RentItem(Base):
+    """Rent line item per branch: multiple rows per branch (office, warehouse, etc.)."""
+    __tablename__ = "rent_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    branch_code = Column(String(20), nullable=False)
+    label = Column(String(100), nullable=False, default="Офис")
     area_sqm = Column(Numeric(10, 2), default=0)
     price_per_sqm = Column(Numeric(14, 2), default=0)
     notes = Column(Text, nullable=True)

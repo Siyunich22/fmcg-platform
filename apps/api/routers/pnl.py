@@ -7,7 +7,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
-from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting, RentSetting
+from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting, RentItem
 
 router = APIRouter()
 
@@ -107,11 +107,10 @@ async def get_summary(
     tgt_map: dict[str, PnlTarget] = {t.branch_code: t for t in tgt_r.scalars().all()}
 
     # ── Rent settings (auto-fill Аренда if no manual expense) ───────────────────
-    rent_r = await db.execute(select(RentSetting))
-    rent_map: dict[str, float] = {
-        r.branch_code: float(r.area_sqm or 0) * float(r.price_per_sqm or 0)
-        for r in rent_r.scalars().all()
-    }
+    rent_r = await db.execute(select(RentItem))
+    rent_map: dict[str, float] = {}
+    for r in rent_r.scalars().all():
+        rent_map[r.branch_code] = rent_map.get(r.branch_code, 0) + float(r.area_sqm or 0) * float(r.price_per_sqm or 0)
 
     # ── Build branch set ─────────────────────────────────────────────────────────
     branch_set = {r.branch_code for r in rev_rows if r.branch_code}
@@ -404,10 +403,12 @@ async def delete_expense_category(
 
 @router.get("/settings/rent")
 async def get_rent_settings(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(RentSetting).order_by(RentSetting.branch_code))).scalars().all()
+    rows = (await db.execute(select(RentItem).order_by(RentItem.branch_code, RentItem.id))).scalars().all()
     return [
         {
+            "id": r.id,
             "branch_code": r.branch_code,
+            "label": r.label,
             "area_sqm": float(r.area_sqm or 0),
             "price_per_sqm": float(r.price_per_sqm or 0),
             "monthly_rent": float(r.area_sqm or 0) * float(r.price_per_sqm or 0),
@@ -417,31 +418,47 @@ async def get_rent_settings(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.put("/settings/rent/{branch_code}")
-async def upsert_rent_setting(
-    branch_code: str,
-    area_sqm: float = Body(...),
-    price_per_sqm: float = Body(...),
+@router.post("/settings/rent")
+async def create_rent_item(
+    branch_code: str = Body(...),
+    label: str = Body("Офис"),
+    area_sqm: float = Body(0),
+    price_per_sqm: float = Body(0),
     notes: Optional[str] = Body(None),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = pg_insert(RentSetting).values(
-        branch_code=branch_code,
-        area_sqm=area_sqm,
-        price_per_sqm=price_per_sqm,
-        notes=notes,
-    ).on_conflict_do_update(
-        index_elements=["branch_code"],
-        set_={"area_sqm": area_sqm, "price_per_sqm": price_per_sqm, "notes": notes},
-    )
-    await db.execute(stmt)
+    row = RentItem(branch_code=branch_code, label=label, area_sqm=area_sqm, price_per_sqm=price_per_sqm, notes=notes)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {"ok": True, "id": row.id}
+
+
+@router.put("/settings/rent/{item_id}")
+async def update_rent_item(
+    item_id: int,
+    branch_code: str = Body(...),
+    label: str = Body("Офис"),
+    area_sqm: float = Body(0),
+    price_per_sqm: float = Body(0),
+    notes: Optional[str] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (await db.execute(select(RentItem).where(RentItem.id == item_id))).scalar_one_or_none()
+    if not row:
+        return {"ok": False, "error": "not found"}
+    row.branch_code = branch_code
+    row.label = label
+    row.area_sqm = area_sqm
+    row.price_per_sqm = price_per_sqm
+    row.notes = notes
     await db.commit()
     return {"ok": True}
 
 
-@router.delete("/settings/rent/{branch_code}")
-async def delete_rent_setting(branch_code: str, db: AsyncSession = Depends(get_db)):
-    await db.execute(delete(RentSetting).where(RentSetting.branch_code == branch_code))
+@router.delete("/settings/rent/{item_id}")
+async def delete_rent_item(item_id: int, db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(RentItem).where(RentItem.id == item_id))
     await db.commit()
     return {"ok": True}
 
