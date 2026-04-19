@@ -5,7 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, TrendingUp, Package, AlertCircle,
-  ClipboardList, Upload, Menu, ChevronRight, LogOut, BarChart2,
+  ClipboardList, Upload, Menu, ChevronRight, LogOut, BarChart2, Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useApi";
@@ -16,8 +16,9 @@ const NAV = [
   { href: "/dashboard/pnl",    label: "P&L",        icon: BarChart2,        section: "overview" },
   { href: "/dashboard/debts",  label: "Дебиторка", icon: AlertCircle,      section: "overview" },
   { href: "/dashboard/tmz",    label: "ТМЗ",       icon: Package,          section: "overview" },
-  { href: "/dashboard/orders", label: "Заявки",    icon: ClipboardList,    section: "ops" },
-  { href: "/dashboard/upload", label: "Загрузка",  icon: Upload,           section: "ops" },
+  { href: "/dashboard/orders",   label: "Заявки",     icon: ClipboardList, section: "ops" },
+  { href: "/dashboard/upload",   label: "Загрузка",   icon: Upload,        section: "ops" },
+  { href: "/dashboard/settings", label: "Настройки",  icon: Settings,      section: "ops" },
 ];
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -163,6 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "/dashboard/orders/new": "Новая заявка",
     "/dashboard/upload": "Загрузка данных",
     "/dashboard/pnl": "P&L — Управленческий отчёт",
+    "/dashboard/settings": "Настройки и бюджетирование",
   }[pathname] ?? "Dashboard";
 
   return (

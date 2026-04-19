@@ -7,7 +7,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
-from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting
+from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting, RentSetting
 
 router = APIRouter()
 
@@ -105,6 +105,13 @@ async def get_summary(
     tgt_r = await db.execute(select(PnlTarget).where(PnlTarget.period_date == pd))
     tgt_map: dict[str, PnlTarget] = {t.branch_code: t for t in tgt_r.scalars().all()}
 
+    # ── Rent settings (auto-fill Аренда if no manual expense) ───────────────────
+    rent_r = await db.execute(select(RentSetting))
+    rent_map: dict[str, float] = {
+        r.branch_code: float(r.area_sqm or 0) * float(r.price_per_sqm or 0)
+        for r in rent_r.scalars().all()
+    }
+
     # ── Build branch set ─────────────────────────────────────────────────────────
     branch_set = {r.branch_code for r in rev_rows if r.branch_code and r.branch_code != "MAIN"}
     branch_codes = sorted(branch_set, key=lambda bc: -(
@@ -168,6 +175,8 @@ async def get_summary(
             plan_v = float(e.amount_plan) if e and e.amount_plan is not None else None
             if cat == "ФОТ" and actual == 0 and total_rev > 0:
                 actual = total_rev * fot_pct / 100
+            if cat == "Аренда" and actual == 0 and bc in rent_map:
+                actual = rent_map[bc]
             exp_by_cat[cat] = {"actual": actual, "plan": plan_v}
             total_opex += actual
 
@@ -386,5 +395,69 @@ async def delete_expense_category(
     await db.execute(
         delete(PnlExpense).where(PnlExpense.period_date == pd, PnlExpense.category == category)
     )
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Rent settings ────────────────────────────────────────────────────────────
+
+@router.get("/settings/rent")
+async def get_rent_settings(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(RentSetting).order_by(RentSetting.branch_code))).scalars().all()
+    return [
+        {
+            "branch_code": r.branch_code,
+            "area_sqm": float(r.area_sqm or 0),
+            "price_per_sqm": float(r.price_per_sqm or 0),
+            "monthly_rent": float(r.area_sqm or 0) * float(r.price_per_sqm or 0),
+            "notes": r.notes,
+        }
+        for r in rows
+    ]
+
+
+@router.put("/settings/rent/{branch_code}")
+async def upsert_rent_setting(
+    branch_code: str,
+    area_sqm: float = Body(...),
+    price_per_sqm: float = Body(...),
+    notes: Optional[str] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = pg_insert(RentSetting).values(
+        branch_code=branch_code,
+        area_sqm=area_sqm,
+        price_per_sqm=price_per_sqm,
+        notes=notes,
+    ).on_conflict_do_update(
+        index_elements=["branch_code"],
+        set_={"area_sqm": area_sqm, "price_per_sqm": price_per_sqm, "notes": notes},
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/settings/rent/{branch_code}")
+async def delete_rent_setting(branch_code: str, db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(RentSetting).where(RentSetting.branch_code == branch_code))
+    await db.commit()
+    return {"ok": True}
+
+
+# ── ФОТ setting ──────────────────────────────────────────────────────────────
+
+@router.get("/settings/fot")
+async def get_fot_setting(db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(select(FotSetting).where(FotSetting.id == 1))).scalar_one_or_none()
+    return {"pct": float(row.pct) if row else 25.0}
+
+
+@router.put("/settings/fot")
+async def upsert_fot_setting(pct: float = Body(...), db: AsyncSession = Depends(get_db)):
+    stmt = pg_insert(FotSetting).values(id=1, pct=pct).on_conflict_do_update(
+        index_elements=["id"], set_={"pct": pct}
+    )
+    await db.execute(stmt)
     await db.commit()
     return {"ok": True}

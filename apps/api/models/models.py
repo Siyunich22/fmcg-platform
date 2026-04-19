@@ -235,6 +235,16 @@ class FotSetting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class RentSetting(Base):
+    """Rent setting per branch: area × price/m² = monthly rent auto-filled in P&L."""
+    __tablename__ = "rent_settings"
+    branch_code = Column(String(20), primary_key=True)
+    area_sqm = Column(Numeric(10, 2), default=0)
+    price_per_sqm = Column(Numeric(14, 2), default=0)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class PnlExpense(Base):
     """Manual expense/cost entries for P&L per branch per period."""
     __tablename__ = "pnl_expenses"

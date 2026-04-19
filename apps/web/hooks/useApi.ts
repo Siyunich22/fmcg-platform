@@ -710,6 +710,66 @@ export const useDeletePnlExpenseCategory = () => {
   });
 };
 
+// ─── Settings ─────────────────────────────────────────────────────────────
+export interface RentSetting {
+  branch_code: string;
+  area_sqm: number;
+  price_per_sqm: number;
+  monthly_rent: number;
+  notes: string | null;
+}
+
+export const useRentSettings = () =>
+  useQuery<RentSetting[]>({
+    queryKey: ["settings", "rent"],
+    queryFn: () => api.get("/api/pnl/settings/rent").then((r) => r.data),
+  });
+
+export const useUpsertRentSetting = () => {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean },
+    Error,
+    { branch_code: string; area_sqm: number; price_per_sqm: number; notes?: string }
+  >({
+    mutationFn: ({ branch_code, ...body }) =>
+      api.put(`/api/pnl/settings/rent/${branch_code}`, body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "rent"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useDeleteRentSetting = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, string>({
+    mutationFn: (branch_code) =>
+      api.delete(`/api/pnl/settings/rent/${branch_code}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "rent"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useFotSetting = () =>
+  useQuery<{ pct: number }>({
+    queryKey: ["settings", "fot"],
+    queryFn: () => api.get("/api/pnl/settings/fot").then((r) => r.data),
+  });
+
+export const useUpsertFotSetting = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, number>({
+    mutationFn: (pct) => api.put("/api/pnl/settings/fot", { pct }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "fot"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
 export const useUploadStock = () => {
   const qc = useQueryClient();
   return useMutation<UploadResponse, Error, File>({
