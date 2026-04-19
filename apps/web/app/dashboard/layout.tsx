@@ -5,7 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, TrendingUp, Package, AlertCircle,
-  ClipboardList, Upload, Menu, ChevronRight, LogOut,
+  ClipboardList, Upload, Menu, ChevronRight, LogOut, BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/useApi";
@@ -13,6 +13,7 @@ import { useAlerts } from "@/hooks/useApi";
 const NAV = [
   { href: "/dashboard",        label: "Дашборд",   icon: LayoutDashboard, section: "overview" },
   { href: "/dashboard/sales",  label: "Продажи",   icon: TrendingUp,       section: "overview" },
+  { href: "/dashboard/pnl",    label: "P&L",        icon: BarChart2,        section: "overview" },
   { href: "/dashboard/debts",  label: "Дебиторка", icon: AlertCircle,      section: "overview" },
   { href: "/dashboard/tmz",    label: "ТМЗ",       icon: Package,          section: "overview" },
   { href: "/dashboard/orders", label: "Заявки",    icon: ClipboardList,    section: "ops" },
@@ -161,6 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "/dashboard/orders": "Заявки",
     "/dashboard/orders/new": "Новая заявка",
     "/dashboard/upload": "Загрузка данных",
+    "/dashboard/pnl": "P&L — Управленческий отчёт",
   }[pathname] ?? "Dashboard";
 
   return (

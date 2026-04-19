@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Boolean, Numeric, Integer, Date,
-    DateTime, ForeignKey, Text, Enum as SAEnum
+    DateTime, ForeignKey, Text, Enum as SAEnum, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -233,6 +233,34 @@ class FotSetting(Base):
     id = Column(Integer, primary_key=True, default=1)
     pct = Column(Numeric(5, 2), default=25.00)   # % of реализация
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PnlExpense(Base):
+    """Manual expense/cost entries for P&L per branch per period."""
+    __tablename__ = "pnl_expenses"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    period_date = Column(Date, nullable=False)
+    branch_code = Column(String(20), nullable=False, default="ALL")
+    category = Column(String(100), nullable=False)
+    sort_order = Column(Integer, default=100)
+    amount_actual = Column(Numeric(14, 2), default=0)
+    amount_plan = Column(Numeric(14, 2), nullable=True)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("period_date", "branch_code", "category", name="uq_pnl_expense"),)
+
+
+class PnlTarget(Base):
+    """Revenue / KPI targets per branch per period."""
+    __tablename__ = "pnl_targets"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    period_date = Column(Date, nullable=False)
+    branch_code = Column(String(20), nullable=False, default="ALL")
+    revenue_plan = Column(Numeric(14, 2), nullable=True)
+    basket_plan = Column(Numeric(14, 2), nullable=True)   # target avg order ₸
+    sku_plan = Column(Integer, nullable=True)              # target active SKU count
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("period_date", "branch_code", name="uq_pnl_target"),)
 
 
 class Alert(Base):

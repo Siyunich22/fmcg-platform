@@ -614,6 +614,81 @@ export const useUploadCashFlow = () => {
   });
 };
 
+// ── P&L hooks ────────────────────────────────────────────────────────────────
+
+export interface PnlBranchData {
+  branch_code: string;
+  branch_name: string;
+  revenue_actual: number;
+  revenue_qty: number;
+  revenue_plan: number | null;
+  returns: number;
+  cogs: number;
+  gross_profit: number;
+  gross_margin: number;
+  bonus_losses: number;
+  expenses: Record<string, { actual: number; plan: number | null }>;
+  total_opex: number;
+  ebit: number;
+  ebit_margin: number;
+  basket_actual: number;
+  basket_plan: number | null;
+  sku_plan: number | null;
+  fot_pct: number;
+}
+
+export interface PnlSummary {
+  period_date: string | null;
+  branches: { code: string; name: string }[];
+  categories: string[];
+  branch_data: PnlBranchData[];
+  fot_pct: number;
+}
+
+export const usePnlDates = () =>
+  useQuery<string[]>({
+    queryKey: ["pnl-dates"],
+    queryFn: () => api.get("/api/pnl/dates").then((r) => r.data),
+  });
+
+export const usePnlSummary = (params: { period_date?: string; exclude_returns?: boolean }) =>
+  useQuery<PnlSummary>({
+    queryKey: ["pnl-summary", params],
+    queryFn: () => api.get("/api/pnl/summary", { params }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const useUpsertPnlExpense = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, {
+    period_date: string; branch_code: string; category: string;
+    amount_actual?: number; amount_plan?: number | null; notes?: string; sort_order?: number;
+  }>({
+    mutationFn: (payload) => api.post("/api/pnl/expense", payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pnl-summary"] }),
+  });
+};
+
+export const useUpsertPnlTarget = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, {
+    period_date: string; branch_code: string;
+    revenue_plan?: number | null; basket_plan?: number | null; sku_plan?: number | null;
+  }>({
+    mutationFn: (payload) => api.post("/api/pnl/target", payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pnl-summary"] }),
+  });
+};
+
+export const useDeletePnlExpenseCategory = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, { period_date: string; category: string }>({
+    mutationFn: ({ period_date, category }) =>
+      api.delete("/api/pnl/expense", { params: { period_date, category } }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pnl-summary"] }),
+  });
+};
+
 export const useUploadStock = () => {
   const qc = useQueryClient();
   return useMutation<UploadResponse, Error, File>({
