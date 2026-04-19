@@ -620,6 +620,7 @@ export interface PnlBranchData {
   branch_code: string;
   branch_name: string;
   revenue_by_cat: Record<string, number>;
+  cogs_by_cat: Record<string, number>;
   revenue_total: number;
   revenue_qty: number;
   revenue_plan: number | null;

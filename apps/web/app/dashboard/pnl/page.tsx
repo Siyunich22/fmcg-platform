@@ -338,30 +338,28 @@ export default function PnlPage() {
                         ))}
                       </tr>
 
-                      {/* Revenue by category — inline below реализация */}
-                      {categories.length > 0 && (
-                        <tr className="border-b border-gray-100 bg-gray-50/50">
-                          <td colSpan={2 + branchCols.length} className="px-4 py-2.5">
-                            <div className="flex flex-wrap gap-2">
-                              {categories.map(cat => {
-                                const amt = totalCol.revenue_by_cat?.[cat] ?? 0;
-                                const share = totalCol.revenue_total > 0 ? (amt / totalCol.revenue_total) * 100 : 0;
-                                return (
-                                  <div key={cat} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
-                                    <div>
-                                      <div className="text-xs font-semibold text-gray-700">{cat}</div>
-                                      <div className="text-[10px] text-gray-400">{fmt(amt)} · {share.toFixed(1)}%</div>
-                                    </div>
-                                    <div className="w-10 h-1 bg-gray-200 rounded-full overflow-hidden ml-1">
-                                      <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(share, 100)}%` }} />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                      {/* Revenue by category — one row per category */}
+                      {categories.map(cat => {
+                        const totalAmt = totalCol.revenue_by_cat?.[cat] ?? 0;
+                        return (
+                          <tr key={cat} className="border-b border-gray-50 hover:bg-gray-50/60 bg-gray-50/20">
+                            <td className="px-4 py-1.5 text-xs text-gray-500 sticky left-0 bg-gray-50/20 pl-8">{cat}</td>
+                            <td className="text-right px-4 py-1.5">
+                              <span className="text-xs tabular-nums text-gray-700 font-medium">{fmt(totalAmt)}</span>
+                              {totalCol.revenue_total > 0 && <div className="text-[9px] text-gray-400">{(totalAmt / totalCol.revenue_total * 100).toFixed(1)}%</div>}
+                            </td>
+                            {branchCols.map(b => {
+                              const amt = b.revenue_by_cat?.[cat] ?? 0;
+                              return (
+                                <td key={b.branch_code} className="text-right px-4 py-1.5">
+                                  <span className="text-xs tabular-nums text-gray-600">{amt ? fmt(amt) : "—"}</span>
+                                  {b.revenue_total > 0 && amt > 0 && <div className="text-[9px] text-gray-400">{(amt / b.revenue_total * 100).toFixed(1)}%</div>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
 
                       {showPlan && (
                         <tr className="border-b border-dashed border-gray-100 bg-indigo-50/30 hover:bg-indigo-50/50">
@@ -407,6 +405,28 @@ export default function PnlPage() {
                           <AmountCell key={b.branch_code} value={-b.cogs} share={-totalCol.cogs} negative />
                         ))}
                       </tr>
+                      {/* COGS by category */}
+                      {categories.map(cat => {
+                        const totalAmt = totalCol.cogs_by_cat?.[cat] ?? 0;
+                        return (
+                          <tr key={cat} className="border-b border-gray-50 hover:bg-gray-50/60 bg-gray-50/20">
+                            <td className="px-4 py-1.5 text-xs text-gray-500 sticky left-0 bg-gray-50/20 pl-8">{cat}</td>
+                            <td className="text-right px-4 py-1.5">
+                              <span className="text-xs tabular-nums text-red-500 font-medium">{totalAmt ? `-${fmt(totalAmt)}` : "—"}</span>
+                              {totalCol.cogs > 0 && totalAmt > 0 && <div className="text-[9px] text-gray-400">{(totalAmt / totalCol.cogs * 100).toFixed(1)}%</div>}
+                            </td>
+                            {branchCols.map(b => {
+                              const amt = b.cogs_by_cat?.[cat] ?? 0;
+                              return (
+                                <td key={b.branch_code} className="text-right px-4 py-1.5">
+                                  <span className="text-xs tabular-nums text-red-400">{amt ? `-${fmt(amt)}` : "—"}</span>
+                                  {b.cogs > 0 && amt > 0 && <div className="text-[9px] text-gray-400">{(amt / b.cogs * 100).toFixed(1)}%</div>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
                       {/* Справочно: из них потери на бонусах */}
                       {totalCol.bonus_losses > 0 && (
                         <tr className="border-b border-gray-50 bg-amber-50/20">
@@ -447,6 +467,35 @@ export default function PnlPage() {
                       </td>
                     ))}
                   </tr>
+
+                  {/* Gross profit by category */}
+                  {categories.map(cat => {
+                    const rev = totalCol.revenue_by_cat?.[cat] ?? 0;
+                    const cogs = totalCol.cogs_by_cat?.[cat] ?? 0;
+                    const gp = rev - cogs;
+                    const margin = rev > 0 ? gp / rev * 100 : 0;
+                    return (
+                      <tr key={cat} className="border-b border-green-50 hover:bg-green-50/40 bg-green-50/20">
+                        <td className="px-4 py-1.5 text-xs text-gray-500 sticky left-0 bg-green-50/20 pl-8">{cat}</td>
+                        <td className="text-right px-4 py-1.5">
+                          <span className={cn("text-xs tabular-nums font-medium", gp >= 0 ? "text-green-700" : "text-red-500")}>{fmt(gp)}</span>
+                          <div className="text-[9px] text-green-500">{margin.toFixed(1)}%</div>
+                        </td>
+                        {branchCols.map(b => {
+                          const bRev = b.revenue_by_cat?.[cat] ?? 0;
+                          const bCogs = b.cogs_by_cat?.[cat] ?? 0;
+                          const bGp = bRev - bCogs;
+                          const bMargin = bRev > 0 ? bGp / bRev * 100 : 0;
+                          return (
+                            <td key={b.branch_code} className="text-right px-4 py-1.5">
+                              <span className={cn("text-xs tabular-nums", bGp >= 0 ? "text-green-600" : "text-red-500")}>{bRev || bCogs ? fmt(bGp) : "—"}</span>
+                              {bRev > 0 && <div className="text-[9px] text-green-500">{bMargin.toFixed(1)}%</div>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
 
                   {/* ── ОПЕРАЦИОННЫЕ РАСХОДЫ ──────────────────────────────── */}
                   <SectionHeader

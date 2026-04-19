@@ -73,10 +73,11 @@ async def get_summary(
     rev_q = rev_q.group_by(SalesReportEntry.branch_code, SalesReportEntry.cat1)
     rev_rows = (await db.execute(rev_q)).all()
 
-    # ── COGS: need qty per (branch, product_code) ──────────────────────────────
+    # ── COGS: qty per (branch, cat1, product_code) ─────────────────────────────
     cogs_q = (
         select(
             SalesReportEntry.branch_code,
+            SalesReportEntry.cat1,
             SalesReportEntry.code,
             func.sum(SalesReportEntry.qty).label("qty"),
         )
@@ -84,7 +85,7 @@ async def get_summary(
     )
     if exclude_returns:
         cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
-    cogs_q = cogs_q.group_by(SalesReportEntry.branch_code, SalesReportEntry.code)
+    cogs_q = cogs_q.group_by(SalesReportEntry.branch_code, SalesReportEntry.cat1, SalesReportEntry.code)
     cogs_rows = (await db.execute(cogs_q)).all()
 
     # ── Bonus losses ────────────────────────────────────────────────────────────
@@ -156,11 +157,16 @@ async def get_summary(
         total_rev = sum(rev_by_cat.values())
         total_qty = sum(rev_qty_by_cat.values())
 
-        # COGS of regular (non-bonus) products
-        cogs_regular = sum(
-            float(r.qty or 0) * cost_map.get(r.code or "", 0)
-            for r in cogs_rows if r.branch_code == bc
-        )
+        # COGS of regular (non-bonus) products — tracked by category
+        cogs_by_cat: dict[str, float] = {}
+        cogs_regular = 0.0
+        for r in cogs_rows:
+            if r.branch_code != bc:
+                continue
+            cost = float(r.qty or 0) * cost_map.get(r.code or "", 0)
+            cogs_regular += cost
+            cat = r.cat1 or "Прочее"
+            cogs_by_cat[cat] = cogs_by_cat.get(cat, 0) + cost
 
         # Bonus losses (cost of bonus/promo goods — no revenue, pure cost)
         bonus_loss = sum(
@@ -202,6 +208,7 @@ async def get_summary(
             "branch_code": bc,
             "branch_name": BRANCH_NAMES.get(bc, bc),
             "revenue_by_cat": rev_by_cat,
+            "cogs_by_cat": cogs_by_cat,
             "revenue_total": total_rev,
             "revenue_qty": total_qty,
             "revenue_plan": rev_plan,
@@ -228,6 +235,14 @@ async def get_summary(
             r[cat] = r.get(cat, 0) + float(row.amount or 0)
         return r
 
+    def _total_cogs_by_cat() -> dict[str, float]:
+        r: dict[str, float] = {}
+        for row in cogs_rows:
+            cat = row.cat1 or "Прочее"
+            cost = float(row.qty or 0) * cost_map.get(row.code or "", 0)
+            r[cat] = r.get(cat, 0) + cost
+        return r
+
     total_rev = sum(float(r.amount or 0) for r in rev_rows)
     total_qty = sum(float(r.qty or 0) for r in rev_rows)
     total_cogs_regular = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in cogs_rows)
@@ -252,6 +267,7 @@ async def get_summary(
         "branch_code": "TOTAL",
         "branch_name": "Итого",
         "revenue_by_cat": _total_rev_by_cat(),
+        "cogs_by_cat": _total_cogs_by_cat(),
         "revenue_total": total_rev,
         "revenue_qty": total_qty,
         "revenue_plan": total_rev_plan,
