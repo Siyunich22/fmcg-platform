@@ -542,26 +542,49 @@ export default function PnlPage() {
                   />
                   {sectionsOpen.has("kpi") && (
                     <>
-                      {/* Корзина продаж */}
+                      {/* Объём продаж */}
+                      <tr className="border-b border-gray-100 hover:bg-gray-50/60">
+                        <td className="px-4 py-2 text-xs text-gray-600 font-medium sticky left-0 bg-white pl-8">
+                          Объём продаж (кол-во шт)
+                        </td>
+                        <td className="text-right px-4 py-2">
+                          <span className="text-xs font-bold text-gray-800 tabular-nums">
+                            {Math.round(totalCol.revenue_qty).toLocaleString("ru")} шт
+                          </span>
+                        </td>
+                        {branchCols.map(b => (
+                          <td key={b.branch_code} className="text-right px-4 py-2">
+                            <span className="text-xs text-gray-700 tabular-nums">
+                              {Math.round(b.revenue_qty).toLocaleString("ru")} шт
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+
+                      {/* Корзина продаж — вычисляется из выручки / кол-во, чтобы числа сходились */}
                       <tr className="border-b border-gray-100 hover:bg-gray-50/60">
                         <td className="px-4 py-2 text-xs text-gray-600 font-medium sticky left-0 bg-white pl-8">
                           <div>Корзина продаж (факт)</div>
-                          <div className="text-[9px] text-gray-400">реализация / кол-во шт</div>
+                          <div className="text-[9px] text-gray-400">выручка ÷ кол-во шт</div>
                         </td>
                         <td className="text-right px-4 py-2">
                           <div className="text-xs font-bold text-gray-800 tabular-nums">
-                            {fmt(totalCol.basket_actual)}
+                            {totalCol.revenue_qty > 0 ? fmt(totalCol.revenue_total / totalCol.revenue_qty) : "—"}
+                          </div>
+                          <div className="text-[9px] text-gray-400 tabular-nums">
+                            {fmt(totalCol.revenue_total)} ÷ {Math.round(totalCol.revenue_qty).toLocaleString("ru")}
                           </div>
                         </td>
                         {branchCols.map(b => (
                           <td key={b.branch_code} className="text-right px-4 py-2">
                             <div className="text-xs font-semibold text-gray-700 tabular-nums">
-                              {fmt(b.basket_actual)}
+                              {b.revenue_qty > 0 ? fmt(b.revenue_total / b.revenue_qty) : "—"}
                             </div>
                           </td>
                         ))}
                       </tr>
 
+                      {/* Корзина план */}
                       {showPlan && (
                         <tr className="border-b border-dashed border-gray-100 bg-indigo-50/20 hover:bg-indigo-50/40">
                           <td className="px-4 py-2 text-xs text-indigo-500 sticky left-0 bg-indigo-50/20 pl-8">
@@ -572,21 +595,24 @@ export default function PnlPage() {
                               ? <span className="text-xs text-indigo-600 tabular-nums">{fmt(totalCol.basket_plan)}</span>
                               : <span className="text-xs text-gray-300">—</span>}
                           </td>
-                          {branchCols.map(b => (
-                            <td key={b.branch_code} className="text-right px-4 py-2">
-                              <EditCell
-                                value={b.basket_plan}
-                                onSave={v => saveBasketPlan(b.branch_code, v)}
-                                placeholder="Задать план"
-                                className="text-indigo-600"
-                              />
-                              <ProgressBar actual={b.basket_actual} plan={b.basket_plan} />
-                            </td>
-                          ))}
+                          {branchCols.map(b => {
+                            const basketActual = b.revenue_qty > 0 ? b.revenue_total / b.revenue_qty : 0;
+                            return (
+                              <td key={b.branch_code} className="text-right px-4 py-2">
+                                <EditCell
+                                  value={b.basket_plan}
+                                  onSave={v => saveBasketPlan(b.branch_code, v)}
+                                  placeholder="Задать план"
+                                  className="text-indigo-600"
+                                />
+                                <ProgressBar actual={basketActual} plan={b.basket_plan} />
+                              </td>
+                            );
+                          })}
                         </tr>
                       )}
 
-                      {/* % плана */}
+                      {/* % выполнения плана выручки */}
                       <tr className="border-b border-gray-100 hover:bg-gray-50/60">
                         <td className="px-4 py-2 text-xs text-gray-600 font-medium sticky left-0 bg-white pl-8">
                           % выполнения плана (выручка)
@@ -605,20 +631,41 @@ export default function PnlPage() {
                         ))}
                       </tr>
 
-                      {/* Объём продаж */}
+                      {/* Себестоимость на единицу */}
                       <tr className="border-b border-gray-100 hover:bg-gray-50/60">
                         <td className="px-4 py-2 text-xs text-gray-600 font-medium sticky left-0 bg-white pl-8">
-                          Объём продаж (кол-во шт)
+                          <div>Себест. на единицу</div>
+                          <div className="text-[9px] text-gray-400">COGS ÷ кол-во шт</div>
                         </td>
                         <td className="text-right px-4 py-2">
-                          <span className="text-xs font-bold text-gray-800 tabular-nums">
-                            {totalCol.revenue_qty.toLocaleString("ru")} шт
+                          <span className="text-xs font-semibold text-gray-700 tabular-nums">
+                            {totalCol.revenue_qty > 0 ? fmt(totalCol.cogs / totalCol.revenue_qty) : "—"}
                           </span>
                         </td>
                         {branchCols.map(b => (
                           <td key={b.branch_code} className="text-right px-4 py-2">
-                            <span className="text-xs text-gray-700 tabular-nums">
-                              {b.revenue_qty.toLocaleString("ru")} шт
+                            <span className="text-xs text-gray-600 tabular-nums">
+                              {b.revenue_qty > 0 ? fmt(b.cogs / b.revenue_qty) : "—"}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+
+                      {/* Валовая прибыль на единицу */}
+                      <tr className="border-b border-gray-100 hover:bg-gray-50/60">
+                        <td className="px-4 py-2 text-xs text-gray-600 font-medium sticky left-0 bg-white pl-8">
+                          <div>Вал. прибыль на единицу</div>
+                          <div className="text-[9px] text-gray-400">вал. прибыль ÷ кол-во шт</div>
+                        </td>
+                        <td className="text-right px-4 py-2">
+                          <span className={cn("text-xs font-semibold tabular-nums", totalCol.gross_profit >= 0 ? "text-green-700" : "text-red-600")}>
+                            {totalCol.revenue_qty > 0 ? fmt(totalCol.gross_profit / totalCol.revenue_qty) : "—"}
+                          </span>
+                        </td>
+                        {branchCols.map(b => (
+                          <td key={b.branch_code} className="text-right px-4 py-2">
+                            <span className={cn("text-xs tabular-nums", b.gross_profit >= 0 ? "text-green-600" : "text-red-500")}>
+                              {b.revenue_qty > 0 ? fmt(b.gross_profit / b.revenue_qty) : "—"}
                             </span>
                           </td>
                         ))}
