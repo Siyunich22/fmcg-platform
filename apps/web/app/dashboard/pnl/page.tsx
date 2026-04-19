@@ -16,12 +16,10 @@ import {
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 function fmt(n: number) {
-  if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M ₸";
-  if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(0) + "K ₸";
-  return n.toFixed(0) + " ₸";
+  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
 }
 function fmtFull(n: number) {
-  return n.toLocaleString("ru-KZ", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ₸";
+  return fmt(n);
 }
 function fmtPct(n: number) { return n.toFixed(1) + "%"; }
 
