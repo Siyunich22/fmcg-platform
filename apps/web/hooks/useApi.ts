@@ -619,30 +619,43 @@ export const useUploadCashFlow = () => {
 export interface PnlBranchData {
   branch_code: string;
   branch_name: string;
-  revenue_actual: number;
+  revenue_by_cat: Record<string, number>;
+  revenue_total: number;
   revenue_qty: number;
   revenue_plan: number | null;
-  returns: number;
   cogs: number;
   gross_profit: number;
   gross_margin: number;
   bonus_losses: number;
   expenses: Record<string, { actual: number; plan: number | null }>;
   total_opex: number;
-  ebit: number;
-  ebit_margin: number;
+  ebitda: number;
+  ebitda_margin: number;
   basket_actual: number;
   basket_plan: number | null;
-  sku_plan: number | null;
-  fot_pct: number;
 }
 
 export interface PnlSummary {
   period_date: string | null;
   branches: { code: string; name: string }[];
   categories: string[];
+  expense_categories: string[];
   branch_data: PnlBranchData[];
   fot_pct: number;
+}
+
+export interface PnlMonthRow {
+  period_date: string;
+  label: string;
+  revenue: number;
+  revenue_plan: number | null;
+  cogs: number;
+  gross_profit: number;
+  gross_margin: number;
+  bonus_losses: number;
+  total_opex: number;
+  ebitda: number;
+  ebitda_margin: number;
 }
 
 export const usePnlDates = () =>
@@ -655,6 +668,13 @@ export const usePnlSummary = (params: { period_date?: string; exclude_returns?: 
   useQuery<PnlSummary>({
     queryKey: ["pnl-summary", params],
     queryFn: () => api.get("/api/pnl/summary", { params }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const usePnlMonths = (exclude_returns?: boolean) =>
+  useQuery<PnlMonthRow[]>({
+    queryKey: ["pnl-months", exclude_returns],
+    queryFn: () => api.get("/api/pnl/months", { params: { exclude_returns } }).then((r) => r.data),
     enabled: true,
   });
 
