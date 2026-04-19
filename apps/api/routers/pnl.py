@@ -142,34 +142,34 @@ async def get_summary(
         total_rev = sum(rev_by_cat.values())
         total_qty = sum(rev_qty_by_cat.values())
 
-        # COGS
-        cogs_total = sum(
+        # COGS of regular (non-bonus) products
+        cogs_regular = sum(
             float(r.qty or 0) * cost_map.get(r.code or "", 0)
             for r in cogs_rows if r.branch_code == bc
         )
 
-        # Bonus losses
+        # Bonus losses (cost of bonus/promo goods — no revenue, pure cost)
         bonus_loss = sum(
             float(r.qty or 0) * cost_map.get(r.code or "", 0)
             for r in bonus_rows_res if r.branch_code == bc
         )
 
+        # Total COGS includes bonus losses (they are cost of sales, not opex)
+        cogs_total = cogs_regular + bonus_loss
+
         gross = total_rev - cogs_total
 
-        # Expenses
+        # Expenses — ФОТ and other manual entries only (no bonus losses here)
         exp_by_cat: dict[str, dict] = {}
         total_opex = 0.0
         for cat in all_exp_cats:
             e = exp_map.get((bc, cat)) or exp_map.get(("ALL", cat))
             actual = float(e.amount_actual or 0) if e else 0.0
             plan_v = float(e.amount_plan) if e and e.amount_plan is not None else None
-            # Auto ФОТ from pct
             if cat == "ФОТ" and actual == 0 and total_rev > 0:
                 actual = total_rev * fot_pct / 100
             exp_by_cat[cat] = {"actual": actual, "plan": plan_v}
             total_opex += actual
-
-        total_opex += bonus_loss
 
         ebitda = gross - total_opex
         ebitda_margin = ebitda / total_rev * 100 if total_rev else 0
@@ -187,9 +187,10 @@ async def get_summary(
             "revenue_qty": total_qty,
             "revenue_plan": rev_plan,
             "cogs": cogs_total,
+            "cogs_regular": cogs_regular,
+            "bonus_losses": bonus_loss,
             "gross_profit": gross,
             "gross_margin": gross_margin,
-            "bonus_losses": bonus_loss,
             "expenses": exp_by_cat,
             "total_opex": total_opex,
             "ebitda": ebitda,
@@ -211,10 +212,11 @@ async def get_summary(
     total_rev = sum(b["revenue_total"] for b in branch_data)
     total_qty = sum(b["revenue_qty"] for b in branch_data)
     total_cogs = sum(b["cogs"] for b in branch_data)
+    total_cogs_regular = sum(b["cogs_regular"] for b in branch_data)
+    total_bonus = sum(b["bonus_losses"] for b in branch_data)
     total_gross = sum(b["gross_profit"] for b in branch_data)
     total_opex_sum = sum(b["total_opex"] for b in branch_data)
     total_ebitda = sum(b["ebitda"] for b in branch_data)
-    total_bonus = sum(b["bonus_losses"] for b in branch_data)
     total_rev_plan = sum(b["revenue_plan"] or 0 for b in branch_data) or None
 
     total_exp: dict[str, dict] = {}
@@ -231,9 +233,10 @@ async def get_summary(
         "revenue_qty": total_qty,
         "revenue_plan": total_rev_plan,
         "cogs": total_cogs,
+        "cogs_regular": total_cogs_regular,
+        "bonus_losses": total_bonus,
         "gross_profit": total_gross,
         "gross_margin": total_gross / total_rev * 100 if total_rev else 0,
-        "bonus_losses": total_bonus,
         "expenses": total_exp,
         "total_opex": total_opex_sum,
         "ebitda": total_ebitda,
@@ -282,7 +285,7 @@ async def get_months(
             cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
         cogs_q = cogs_q.group_by(SalesReportEntry.code)
         cogs_rows = (await db.execute(cogs_q)).all()
-        cogs_total = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in cogs_rows)
+        cogs_regular = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in cogs_rows)
 
         bonus_q = select(SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty")).where(
             SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.is_(True)  # noqa
@@ -290,14 +293,13 @@ async def get_months(
         bonus_rows_r = (await db.execute(bonus_q)).all()
         bonus_loss = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in bonus_rows_r)
 
+        # Bonus losses are part of COGS, not opex
+        cogs_total = cogs_regular + bonus_loss
         gross = rev_total - cogs_total
 
-        exp_r = await db.execute(
-            select(func.sum(PnlExpense.amount_actual)).where(PnlExpense.period_date == pd, PnlExpense.branch_code != "ALL")
-        )
         opex = float((await db.execute(
             select(func.sum(PnlExpense.amount_actual)).where(PnlExpense.period_date == pd)
-        )).scalar() or 0) + bonus_loss
+        )).scalar() or 0)
 
         ebitda = gross - opex
 
@@ -312,9 +314,9 @@ async def get_months(
             "revenue": rev_total,
             "revenue_plan": rev_plan,
             "cogs": cogs_total,
+            "bonus_losses": bonus_loss,
             "gross_profit": gross,
             "gross_margin": gross / rev_total * 100 if rev_total else 0,
-            "bonus_losses": bonus_loss,
             "total_opex": opex,
             "ebitda": ebitda,
             "ebitda_margin": ebitda / rev_total * 100 if rev_total else 0,

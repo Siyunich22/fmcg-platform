@@ -624,9 +624,10 @@ export interface PnlBranchData {
   revenue_qty: number;
   revenue_plan: number | null;
   cogs: number;
+  cogs_regular: number;
+  bonus_losses: number;
   gross_profit: number;
   gross_margin: number;
-  bonus_losses: number;
   expenses: Record<string, { actual: number; plan: number | null }>;
   total_opex: number;
   ebitda: number;

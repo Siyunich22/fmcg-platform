@@ -398,15 +398,34 @@ export default function PnlPage() {
                     onToggle={() => toggleSection("cogs")}
                   />
                   {sectionsOpen.has("cogs") && (
-                    <tr className="border-b border-gray-100 hover:bg-gray-50/60">
-                      <td className="px-4 py-2.5 text-xs text-gray-600 sticky left-0 bg-white pl-8">
-                        Себестоим. товаров (COGS)
-                      </td>
-                      <AmountCell value={-totalCol.cogs} negative />
-                      {branchCols.map(b => (
-                        <AmountCell key={b.branch_code} value={-b.cogs} share={-totalCol.cogs} negative />
-                      ))}
-                    </tr>
+                    <>
+                      <tr className="border-b border-gray-100 hover:bg-gray-50/60">
+                        <td className="px-4 py-2.5 text-xs text-gray-600 sticky left-0 bg-white pl-8">
+                          Себестоим. товаров (COGS)
+                        </td>
+                        <AmountCell value={-totalCol.cogs} negative />
+                        {branchCols.map(b => (
+                          <AmountCell key={b.branch_code} value={-b.cogs} share={-totalCol.cogs} negative />
+                        ))}
+                      </tr>
+                      {/* Справочно: из них потери на бонусах */}
+                      {totalCol.bonus_losses > 0 && (
+                        <tr className="border-b border-gray-50 bg-amber-50/20">
+                          <td className="px-4 py-1.5 text-[10px] text-amber-600 sticky left-0 bg-amber-50/20 pl-10">
+                            в т.ч. потери (бонусы и акции)
+                          </td>
+                          {[totalCol, ...branchCols].map(b => (
+                            <td key={b.branch_code} className="text-right px-4 py-1.5">
+                              {b.bonus_losses > 0 ? (
+                                <span className="text-[10px] text-amber-600 tabular-nums">
+                                  -{fmt(b.bonus_losses)}
+                                </span>
+                              ) : null}
+                            </td>
+                          ))}
+                        </tr>
+                      )}
+                    </>
                   )}
 
                   {/* ── ВАЛОВАЯ ПРИБЫЛЬ ────────────────────────────────────── */}
@@ -454,17 +473,6 @@ export default function PnlPage() {
                           onDelete={() => deleteCategory.mutate({ period_date: periodDate!, category: cat })}
                         />
                       ))}
-
-                      {/* Потери на бонусах/акциях */}
-                      <tr className="border-b border-gray-100 bg-amber-50/30 hover:bg-amber-50/50">
-                        <td className="px-4 py-2 text-xs text-amber-700 font-medium sticky left-0 bg-amber-50/30 pl-8">
-                          Потери (бонусы и акции)
-                        </td>
-                        <AmountCell value={-totalCol.bonus_losses} negative />
-                        {branchCols.map(b => (
-                          <AmountCell key={b.branch_code} value={-b.bonus_losses} share={-totalCol.bonus_losses} negative />
-                        ))}
-                      </tr>
 
                       {/* Add custom category */}
                       <tr className="border-b border-gray-50">
