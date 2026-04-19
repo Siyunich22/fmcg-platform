@@ -11,6 +11,7 @@ const BRANCH_NAMES: Record<string, string> = {
   ALMATY: "Алматы", ASTANA: "Астана", ATYRAU: "Атырау",
   KARAGANDA: "Караганда", KOKSHETAU: "Кокшетау",
   SEMEY: "Семей", SHYMKENT: "Шымкент",
+  MAIN: "Головной офис",
 };
 
 const ALL_BRANCHES = Object.keys(BRANCH_NAMES);

@@ -16,6 +16,7 @@ BRANCH_NAMES = {
     "ALMATY": "Алматы", "ASTANA": "Астана", "ATYRAU": "Атырау",
     "KARAGANDA": "Караганда", "KOKSHETAU": "Кокшетау",
     "SEMEY": "Семей", "SHYMKENT": "Шымкент",
+    "MAIN": "Головной офис",
 }
 
 EXPENSE_CATEGORIES = [
@@ -113,7 +114,7 @@ async def get_summary(
     }
 
     # ── Build branch set ─────────────────────────────────────────────────────────
-    branch_set = {r.branch_code for r in rev_rows if r.branch_code and r.branch_code != "MAIN"}
+    branch_set = {r.branch_code for r in rev_rows if r.branch_code}
     branch_codes = sorted(branch_set, key=lambda bc: -(
         sum(float(r.amount or 0) for r in rev_rows if r.branch_code == bc)
     ))
@@ -121,7 +122,7 @@ async def get_summary(
     # ── Category set ───────────────────────────────────────────────────────────
     cat_set: set[str] = set()
     for r in rev_rows:
-        if r.cat1 and r.branch_code != "MAIN":
+        if r.cat1:
             cat_set.add(r.cat1)
     categories = sorted(cat_set, key=lambda c: -(
         sum(float(r.amount or 0) for r in rev_rows if r.cat1 == c)
