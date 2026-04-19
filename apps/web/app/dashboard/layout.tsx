@@ -18,7 +18,7 @@ const NAV = [
   { href: "/dashboard/tmz",    label: "ТМЗ",       icon: Package,          section: "overview" },
   { href: "/dashboard/orders",   label: "Заявки",     icon: ClipboardList, section: "ops" },
   { href: "/dashboard/upload",   label: "Загрузка",   icon: Upload,        section: "ops" },
-  { href: "/dashboard/settings", label: "Настройки",  icon: Settings,      section: "ops" },
+  { href: "/dashboard/settings", label: "Бюджетирование", icon: Settings, section: "ops" },
 ];
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -164,7 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "/dashboard/orders/new": "Новая заявка",
     "/dashboard/upload": "Загрузка данных",
     "/dashboard/pnl": "P&L — Управленческий отчёт",
-    "/dashboard/settings": "Настройки и бюджетирование",
+    "/dashboard/settings": "Бюджетирование",
   }[pathname] ?? "Dashboard";
 
   return (

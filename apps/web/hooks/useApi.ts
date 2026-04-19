@@ -774,6 +774,62 @@ export const useFotSetting = () =>
     queryFn: () => api.get("/api/pnl/settings/fot").then((r) => r.data),
   });
 
+export interface HqFotItem {
+  id: number;
+  name: string;
+  fixed_amount: number;
+  motivation_amount: number;
+  total: number;
+  notes: string | null;
+}
+
+export const useHqFotItems = () =>
+  useQuery<HqFotItem[]>({
+    queryKey: ["settings", "hq-fot"],
+    queryFn: () => api.get("/api/pnl/settings/hq-fot").then((r) => r.data),
+  });
+
+export const useCreateHqFotItem = () => {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean; id: number },
+    Error,
+    { name: string; fixed_amount: number; motivation_amount: number; notes?: string }
+  >({
+    mutationFn: (body) => api.post("/api/pnl/settings/hq-fot", body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "hq-fot"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useUpdateHqFotItem = () => {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean },
+    Error,
+    { id: number; name: string; fixed_amount: number; motivation_amount: number; notes?: string }
+  >({
+    mutationFn: ({ id, ...body }) => api.put(`/api/pnl/settings/hq-fot/${id}`, body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "hq-fot"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useDeleteHqFotItem = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, number>({
+    mutationFn: (id) => api.delete(`/api/pnl/settings/hq-fot/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "hq-fot"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
 export const useUpsertFotSetting = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, number>({

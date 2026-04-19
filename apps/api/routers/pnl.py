@@ -7,7 +7,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
-from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting, RentItem
+from models.models import PnlExpense, PnlTarget, SalesReportEntry, ProductCost, FotSetting, RentItem, HqFotItem
 
 router = APIRouter()
 
@@ -106,6 +106,13 @@ async def get_summary(
     tgt_r = await db.execute(select(PnlTarget).where(PnlTarget.period_date == pd))
     tgt_map: dict[str, PnlTarget] = {t.branch_code: t for t in tgt_r.scalars().all()}
 
+    # ── HQ ФОТ (auto-fill ФОТ for MAIN branch from hq_fot_items) ───────────────
+    hq_fot_r = await db.execute(select(HqFotItem))
+    hq_fot_total = sum(
+        float(r.fixed_amount or 0) + float(r.motivation_amount or 0)
+        for r in hq_fot_r.scalars().all()
+    )
+
     # ── Rent settings (auto-fill Аренда if no manual expense) ───────────────────
     rent_r = await db.execute(select(RentItem))
     rent_map: dict[str, float] = {}
@@ -173,8 +180,11 @@ async def get_summary(
             e = exp_map.get((bc, cat)) or exp_map.get(("ALL", cat))
             actual = float(e.amount_actual or 0) if e else 0.0
             plan_v = float(e.amount_plan) if e and e.amount_plan is not None else None
-            if cat == "ФОТ" and actual == 0 and total_rev > 0:
-                actual = total_rev * fot_pct / 100
+            if cat == "ФОТ" and actual == 0:
+                if bc == "MAIN" and hq_fot_total > 0:
+                    actual = hq_fot_total
+                elif bc != "MAIN" and total_rev > 0:
+                    actual = total_rev * fot_pct / 100
             if cat == "Аренда" and actual == 0 and bc in rent_map:
                 actual = rent_map[bc]
             exp_by_cat[cat] = {"actual": actual, "plan": plan_v}
@@ -477,5 +487,65 @@ async def upsert_fot_setting(pct: float = Body(...), db: AsyncSession = Depends(
         index_elements=["id"], set_={"pct": pct}
     )
     await db.execute(stmt)
+    await db.commit()
+    return {"ok": True}
+
+
+# ── HQ ФОТ (head-office payroll per person) ──────────────────────────────────
+
+@router.get("/settings/hq-fot")
+async def get_hq_fot(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(HqFotItem).order_by(HqFotItem.id))).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "fixed_amount": float(r.fixed_amount or 0),
+            "motivation_amount": float(r.motivation_amount or 0),
+            "total": float(r.fixed_amount or 0) + float(r.motivation_amount or 0),
+            "notes": r.notes,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/settings/hq-fot")
+async def create_hq_fot(
+    name: str = Body(...),
+    fixed_amount: float = Body(0),
+    motivation_amount: float = Body(0),
+    notes: Optional[str] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    row = HqFotItem(name=name, fixed_amount=fixed_amount, motivation_amount=motivation_amount, notes=notes)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {"ok": True, "id": row.id}
+
+
+@router.put("/settings/hq-fot/{item_id}")
+async def update_hq_fot(
+    item_id: int,
+    name: str = Body(...),
+    fixed_amount: float = Body(0),
+    motivation_amount: float = Body(0),
+    notes: Optional[str] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (await db.execute(select(HqFotItem).where(HqFotItem.id == item_id))).scalar_one_or_none()
+    if not row:
+        return {"ok": False, "error": "not found"}
+    row.name = name
+    row.fixed_amount = fixed_amount
+    row.motivation_amount = motivation_amount
+    row.notes = notes
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/settings/hq-fot/{item_id}")
+async def delete_hq_fot(item_id: int, db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(HqFotItem).where(HqFotItem.id == item_id))
     await db.commit()
     return {"ok": True}

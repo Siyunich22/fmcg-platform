@@ -245,6 +245,17 @@ class RentSetting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class HqFotItem(Base):
+    """Head-office payroll line: one row per person/role with fixed + motivation."""
+    __tablename__ = "hq_fot_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    fixed_amount = Column(Numeric(14, 2), default=0)
+    motivation_amount = Column(Numeric(14, 2), default=0)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class RentItem(Base):
     """Rent line item per branch: multiple rows per branch (office, warehouse, etc.)."""
     __tablename__ = "rent_items"
