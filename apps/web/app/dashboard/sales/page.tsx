@@ -435,7 +435,7 @@ function OverviewTab({ salesTree, totals, grandTotal, bonusTotal, tmzTotal, real
                 <XAxis type="number" tickFormatter={v => fmtM(Number(v))} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#374151" }} width={76} axisLine={false} tickLine={false} />
                 <Tooltip
-                  formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : "Поступления"]}
+                  formatter={(v: number, name: string) => [fmt(v), name === "amount" ? "Продажи" : name === "cashflow" ? "Поступления" : "Валовая прибыль"]}
                 />
                 <Bar dataKey="amount" name="amount" radius={[0, 2, 2, 0]} maxBarSize={14}>
                   {branchData.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
