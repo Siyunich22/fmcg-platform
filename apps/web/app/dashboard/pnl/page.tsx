@@ -124,7 +124,7 @@ export default function PnlPage() {
     if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
   }, [dates, selectedDate]);
 
-  const { data: summary, isLoading } = usePnlSummary({
+  const { data: summary, isLoading, isError, error } = usePnlSummary({
     period_date: selectedDate || undefined,
     exclude_returns: excludeReturns || undefined,
   });
@@ -190,6 +190,18 @@ export default function PnlPage() {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
         <Loader2 size={24} className="animate-spin mr-2" />Загрузка P&L...
+      </div>
+    );
+  }
+
+  if (viewMode === "branches" && isError) {
+    const msg = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      ?? (error instanceof Error ? error.message : "Неизвестная ошибка");
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-red-400">
+        <BarChart2 size={32} className="text-red-300" />
+        <div className="text-sm font-semibold">Ошибка загрузки P&L</div>
+        <div className="text-xs text-red-300 font-mono max-w-lg text-center">{msg}</div>
       </div>
     );
   }

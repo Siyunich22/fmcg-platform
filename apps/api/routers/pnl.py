@@ -3,7 +3,7 @@ from datetime import date as date_type
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
@@ -65,7 +65,7 @@ async def get_summary(
             func.sum(SalesReportEntry.qty).label("qty"),
             func.sum(SalesReportEntry.amount).label("amount"),
         )
-        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False)  # noqa
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True))  # noqa: E712
     )
     if exclude_returns:
         rev_q = rev_q.where(SalesReportEntry.amount >= 0)
@@ -79,7 +79,7 @@ async def get_summary(
             SalesReportEntry.code,
             func.sum(SalesReportEntry.qty).label("qty"),
         )
-        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False)  # noqa
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True))  # noqa: E712
     )
     if exclude_returns:
         cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
@@ -89,7 +89,7 @@ async def get_summary(
     # ── Bonus losses ────────────────────────────────────────────────────────────
     bonus_q = (
         select(SalesReportEntry.branch_code, SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty"))
-        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == True)  # noqa
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.is_(True))  # noqa: E712
         .group_by(SalesReportEntry.branch_code, SalesReportEntry.code)
     )
     bonus_rows_res = (await db.execute(bonus_q)).all()
