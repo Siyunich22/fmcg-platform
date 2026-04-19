@@ -47,6 +47,7 @@ async def get_summary(
     period_date: str | None = Query(None),
     branch_code: str | None = Query(None),
     is_bonus: bool = Query(False),
+    exclude_returns: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """Category-level summary: cat1 > cat2 totals."""
@@ -68,6 +69,8 @@ async def get_summary(
     )
     if branch_code:
         q = q.where(SalesReportEntry.branch_code == branch_code)
+    if exclude_returns:
+        q = q.where(SalesReportEntry.amount >= 0)
 
     q = q.group_by(
         SalesReportEntry.cat1,
@@ -98,6 +101,7 @@ async def get_rows(
     cat1: str | None = Query(None),
     cat2: str | None = Query(None),
     is_bonus: bool = Query(False),
+    exclude_returns: bool = Query(False),
     search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -116,6 +120,8 @@ async def get_rows(
         q = q.where(SalesReportEntry.cat1 == cat1)
     if cat2:
         q = q.where(SalesReportEntry.cat2 == cat2)
+    if exclude_returns:
+        q = q.where(SalesReportEntry.amount >= 0)
     if search:
         q = q.where(SalesReportEntry.name.ilike(f"%{search}%"))
 
@@ -151,6 +157,7 @@ async def get_rows(
 async def get_totals(
     period_date: str | None = Query(None),
     branch_code: str | None = Query(None),
+    exclude_returns: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """Grand totals per branch."""
@@ -169,6 +176,8 @@ async def get_totals(
     )
     if branch_code:
         q = q.where(SalesReportEntry.branch_code == branch_code)
+    if exclude_returns:
+        q = q.where(SalesReportEntry.amount >= 0)
     q = q.group_by(SalesReportEntry.branch_code).order_by(SalesReportEntry.branch_code)
 
     result = await db.execute(q)

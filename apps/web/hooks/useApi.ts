@@ -438,6 +438,7 @@ export const useSalesReportSummary = (params: {
   period_date?: string;
   branch_code?: string;
   is_bonus?: boolean;
+  exclude_returns?: boolean;
 }) =>
   useQuery<SalesReportSummaryRow[]>({
     queryKey: ["sales-report-summary", params],
@@ -451,6 +452,7 @@ export const useSalesReportRows = (params: {
   cat1?: string;
   cat2?: string;
   is_bonus?: boolean;
+  exclude_returns?: boolean;
   search?: string;
 }) =>
   useQuery<SalesReportRow[]>({
@@ -462,6 +464,7 @@ export const useSalesReportRows = (params: {
 export const useSalesReportTotals = (params: {
   period_date?: string;
   branch_code?: string;
+  exclude_returns?: boolean;
 }) =>
   useQuery<SalesReportTotal[]>({
     queryKey: ["sales-report-totals", params],

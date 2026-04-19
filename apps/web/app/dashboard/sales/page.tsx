@@ -1476,12 +1476,13 @@ export default function SalesPage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [showUpload, setShowUpload] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<SalesReportRow | null>(null);
+  const [excludeReturns, setExcludeReturns] = useState(false);
 
   useEffect(() => {
     if (dates.length > 0 && !selectedDate) setSelectedDate(dates[0]);
   }, [dates, selectedDate]);
 
-  const p = { period_date: selectedDate || undefined };
+  const p = { period_date: selectedDate || undefined, exclude_returns: excludeReturns || undefined };
   const { data: summary = [], isLoading } = useSalesReportSummary({ ...p, is_bonus: false });
   const { data: bonusSummary = [] } = useSalesReportSummary({ ...p, is_bonus: true });
   const { data: totals = [] } = useSalesReportTotals(p);
@@ -1569,6 +1570,17 @@ export default function SalesPage() {
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
             {dates.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
+          <button
+            onClick={() => setExcludeReturns(v => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors",
+              excludeReturns
+                ? "bg-orange-50 border-orange-300 text-orange-700"
+                : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
+            )}>
+            <span className={cn("w-2 h-2 rounded-full flex-shrink-0", excludeReturns ? "bg-orange-400" : "bg-gray-300")} />
+            {excludeReturns ? "Без возвратов" : "С возвратами"}
+          </button>
           <button onClick={() => setShowUpload(v => !v)}
             className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
               showUpload ? "bg-gray-200 text-gray-700" : "bg-blue-600 text-white hover:bg-blue-700")}>
