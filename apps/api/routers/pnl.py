@@ -3,7 +3,7 @@ from datetime import date as date_type
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete, or_
+from sqlalchemy import select, func, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import get_db
@@ -24,7 +24,7 @@ EXPENSE_CATEGORIES = [
 ]
 
 
-async def _latest_date(db: AsyncSession) -> date_type | None:
+async def _latest_date(db: AsyncSession) -> Optional[date_type]:
     r = await db.execute(
         select(SalesReportEntry.period_date).order_by(SalesReportEntry.period_date.desc()).limit(1)
     )
@@ -41,7 +41,7 @@ async def get_dates(db: AsyncSession = Depends(get_db)):
 
 @router.get("/summary")
 async def get_summary(
-    period_date: str | None = Query(None),
+    period_date: Optional[str] = Query(None),
     exclude_returns: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
@@ -269,14 +269,14 @@ async def get_months(
     months = []
     for pd in all_dates:
         rev_q = select(func.sum(SalesReportEntry.amount)).where(
-            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False  # noqa
+            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True)  # noqa
         )
         if exclude_returns:
             rev_q = rev_q.where(SalesReportEntry.amount >= 0)
         rev_total = float((await db.execute(rev_q)).scalar() or 0)
 
         cogs_q = select(SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty")).where(
-            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False  # noqa
+            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True)  # noqa
         )
         if exclude_returns:
             cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
@@ -285,7 +285,7 @@ async def get_months(
         cogs_total = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in cogs_rows)
 
         bonus_q = select(SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty")).where(
-            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == True  # noqa
+            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.is_(True)  # noqa
         ).group_by(SalesReportEntry.code)
         bonus_rows_r = (await db.execute(bonus_q)).all()
         bonus_loss = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in bonus_rows_r)

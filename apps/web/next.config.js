@@ -17,6 +17,7 @@ const nextConfig = {
       "branches",
       "tmz",
       "cash-flow",
+      "pnl",
     ];
     return backendRoutes.map((route) => ({
       source: `/api/${route}/:path*`,
