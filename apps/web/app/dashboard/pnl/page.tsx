@@ -208,6 +208,19 @@ export default function PnlPage() {
   const categories = summary?.categories ?? [];
   const periodDate = summary?.period_date ?? selectedDate;
 
+  // Must be before early returns to satisfy Rules of Hooks
+  const products = summary?.products ?? [];
+  const productIndex = useMemo(() => {
+    const idx = new Map<string, Map<string, PnlProduct[]>>();
+    for (const p of products) {
+      if (!idx.has(p.cat)) idx.set(p.cat, new Map());
+      const byBranch = idx.get(p.cat)!;
+      if (!byBranch.has(p.branch_code)) byBranch.set(p.branch_code, []);
+      byBranch.get(p.branch_code)!.push(p);
+    }
+    return idx;
+  }, [products]);
+
   function toggleSection(id: string) {
     setSectionsOpen(prev => {
       const next = new Set(prev);
@@ -289,19 +302,6 @@ export default function PnlPage() {
   const branchCols = selectedBranchCodes.size === 0
     ? allBranchCols
     : allBranchCols.filter(b => selectedBranchCodes.has(b.branch_code));
-
-  // Product index: cat → branch_code → products[]
-  const products = summary?.products ?? [];
-  const productIndex = useMemo(() => {
-    const idx = new Map<string, Map<string, PnlProduct[]>>();
-    for (const p of products) {
-      if (!idx.has(p.cat)) idx.set(p.cat, new Map());
-      const byBranch = idx.get(p.cat)!;
-      if (!byBranch.has(p.branch_code)) byBranch.set(p.branch_code, []);
-      byBranch.get(p.branch_code)!.push(p);
-    }
-    return idx;
-  }, [products]);
 
   function toggleCat(cat: string) {
     setExpandedCats(prev => {
