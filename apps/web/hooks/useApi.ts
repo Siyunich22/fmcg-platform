@@ -637,6 +637,16 @@ export interface PnlBranchData {
   basket_plan: number | null;
 }
 
+export interface PnlProduct {
+  branch_code: string;
+  cat: string;
+  code: string;
+  name: string;
+  qty: number;
+  revenue: number;
+  cogs: number;
+}
+
 export interface PnlSummary {
   period_date: string | null;
   branches: { code: string; name: string }[];
@@ -644,6 +654,7 @@ export interface PnlSummary {
   expense_categories: string[];
   branch_data: PnlBranchData[];
   fot_pct: number;
+  products: PnlProduct[];
 }
 
 export interface PnlMonthRow {

@@ -88,6 +88,26 @@ async def get_summary(
     cogs_q = cogs_q.group_by(SalesReportEntry.branch_code, SalesReportEntry.cat1, SalesReportEntry.code)
     cogs_rows = (await db.execute(cogs_q)).all()
 
+    # ── Product-level revenue (for drill-down) ─────────────────────────────────
+    prod_q = (
+        select(
+            SalesReportEntry.branch_code,
+            SalesReportEntry.cat1,
+            SalesReportEntry.code,
+            SalesReportEntry.name,
+            func.sum(SalesReportEntry.qty).label("qty"),
+            func.sum(SalesReportEntry.amount).label("amount"),
+        )
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False)  # noqa: E712
+    )
+    if exclude_returns:
+        prod_q = prod_q.where(SalesReportEntry.amount >= 0)
+    prod_q = prod_q.group_by(
+        SalesReportEntry.branch_code, SalesReportEntry.cat1,
+        SalesReportEntry.code, SalesReportEntry.name,
+    ).order_by(func.sum(SalesReportEntry.amount).desc())
+    prod_rows = (await db.execute(prod_q)).all()
+
     # ── Bonus losses ────────────────────────────────────────────────────────────
     bonus_q = (
         select(SalesReportEntry.branch_code, SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty"))
@@ -284,6 +304,20 @@ async def get_summary(
         "basket_plan": None,
     }
 
+    # ── Products list (flat, for drill-down) ────────────────────────────────────
+    products = [
+        {
+            "branch_code": r.branch_code,
+            "cat": r.cat1 or "Прочее",
+            "code": r.code,
+            "name": r.name,
+            "qty": float(r.qty or 0),
+            "revenue": float(r.amount or 0),
+            "cogs": float(r.qty or 0) * cost_map.get(r.code or "", 0),
+        }
+        for r in prod_rows
+    ]
+
     return {
         "period_date": str(pd),
         "branches": [{"code": bc, "name": BRANCH_NAMES.get(bc, bc)} for bc in branch_codes],
@@ -291,6 +325,7 @@ async def get_summary(
         "expense_categories": all_exp_cats,
         "branch_data": [totals] + branch_data,
         "fot_pct": fot_pct,
+        "products": products,
     }
 
 
