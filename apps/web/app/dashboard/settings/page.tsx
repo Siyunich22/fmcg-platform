@@ -21,7 +21,7 @@ function fmt(n: number) {
   return n.toLocaleString("ru-KZ", { maximumFractionDigits: 0 }) + " ₸";
 }
 
-type EditState = Omit<RentItem, "monthly_rent"> & { area_sqm: string; price_per_sqm: string };
+type EditState = Omit<RentItem, "monthly_rent" | "area_sqm" | "price_per_sqm"> & { area_sqm: string; price_per_sqm: string };
 type NewState = { branch_code: string; label: string; area_sqm: string; price_per_sqm: string; notes: string };
 
 const emptyNew = (): NewState => ({ branch_code: "", label: "Офис", area_sqm: "", price_per_sqm: "", notes: "" });
