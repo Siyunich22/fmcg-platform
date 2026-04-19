@@ -24,7 +24,7 @@ function fmt(n: number) {
 
 type EditState = Omit<RentItem, "monthly_rent" | "area_sqm" | "price_per_sqm"> & { area_sqm: string; price_per_sqm: string };
 type NewState = { branch_code: string; label: string; area_sqm: string; price_per_sqm: string; notes: string };
-type HqEditState = Omit<HqFotItem, "total"> & { fixed_amount: string; motivation_amount: string };
+type HqEditState = Omit<HqFotItem, "total" | "fixed_amount" | "motivation_amount"> & { fixed_amount: string; motivation_amount: string };
 type HqNewState = { name: string; fixed_amount: string; motivation_amount: string; notes: string };
 
 const emptyNew = (): NewState => ({ branch_code: "", label: "Офис", area_sqm: "", price_per_sqm: "", notes: "" });
