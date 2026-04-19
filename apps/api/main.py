@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy import text
 
 from routers import auth, upload, dashboard, sales, stock, debts, orders, branches, tmz, sales_report, cash_flow, pnl
 from db import engine, Base
@@ -12,6 +13,10 @@ async def lifespan(app: FastAPI):
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Normalize: set is_bonus=FALSE for any NULL rows so all queries are consistent
+        await conn.execute(text(
+            "UPDATE sales_report_entries SET is_bonus = FALSE WHERE is_bonus IS NULL"
+        ))
     yield
     # Shutdown
     await engine.dispose()

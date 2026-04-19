@@ -65,7 +65,7 @@ async def get_summary(
             func.sum(SalesReportEntry.qty).label("qty"),
             func.sum(SalesReportEntry.amount).label("amount"),
         )
-        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True))  # noqa: E712
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False)  # noqa: E712
     )
     if exclude_returns:
         rev_q = rev_q.where(SalesReportEntry.amount >= 0)
@@ -79,7 +79,7 @@ async def get_summary(
             SalesReportEntry.code,
             func.sum(SalesReportEntry.qty).label("qty"),
         )
-        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True))  # noqa: E712
+        .where(SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False)  # noqa: E712
     )
     if exclude_returns:
         cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
@@ -272,14 +272,14 @@ async def get_months(
     months = []
     for pd in all_dates:
         rev_q = select(func.sum(SalesReportEntry.amount)).where(
-            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True)  # noqa
+            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False  # noqa: E712
         )
         if exclude_returns:
             rev_q = rev_q.where(SalesReportEntry.amount >= 0)
         rev_total = float((await db.execute(rev_q)).scalar() or 0)
 
         cogs_q = select(SalesReportEntry.code, func.sum(SalesReportEntry.qty).label("qty")).where(
-            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus.isnot(True)  # noqa
+            SalesReportEntry.period_date == pd, SalesReportEntry.is_bonus == False  # noqa: E712
         )
         if exclude_returns:
             cogs_q = cogs_q.where(SalesReportEntry.amount >= 0)
