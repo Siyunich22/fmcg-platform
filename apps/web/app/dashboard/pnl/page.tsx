@@ -295,32 +295,6 @@ export default function PnlPage() {
       {/* ── BRANCHES VIEW ───────────────────────────────────────────────────── */}
       {viewMode === "branches" && totalCol && (
         <>
-          {/* Revenue by category cards */}
-          {categories.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
-                Выручка по категориям (Итого)
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {categories.map(cat => {
-                  const amt = totalCol.revenue_by_cat?.[cat] ?? 0;
-                  const share = totalCol.revenue_total > 0 ? (amt / totalCol.revenue_total) * 100 : 0;
-                  return (
-                    <div key={cat} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                      <div>
-                        <div className="text-xs font-semibold text-gray-700">{cat}</div>
-                        <div className="text-[10px] text-gray-400">{fmt(amt)} · {share.toFixed(1)}%</div>
-                      </div>
-                      <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden ml-1">
-                        <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(share, 100)}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* P&L Table */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -363,6 +337,31 @@ export default function PnlPage() {
                           <AmountCell key={b.branch_code} value={b.revenue_total} share={totalCol.revenue_total} />
                         ))}
                       </tr>
+
+                      {/* Revenue by category — inline below реализация */}
+                      {categories.length > 0 && (
+                        <tr className="border-b border-gray-100 bg-gray-50/50">
+                          <td colSpan={2 + branchCols.length} className="px-4 py-2.5">
+                            <div className="flex flex-wrap gap-2">
+                              {categories.map(cat => {
+                                const amt = totalCol.revenue_by_cat?.[cat] ?? 0;
+                                const share = totalCol.revenue_total > 0 ? (amt / totalCol.revenue_total) * 100 : 0;
+                                return (
+                                  <div key={cat} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+                                    <div>
+                                      <div className="text-xs font-semibold text-gray-700">{cat}</div>
+                                      <div className="text-[10px] text-gray-400">{fmt(amt)} · {share.toFixed(1)}%</div>
+                                    </div>
+                                    <div className="w-10 h-1 bg-gray-200 rounded-full overflow-hidden ml-1">
+                                      <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(share, 100)}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
 
                       {showPlan && (
                         <tr className="border-b border-dashed border-gray-100 bg-indigo-50/30 hover:bg-indigo-50/50">
