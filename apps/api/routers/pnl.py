@@ -201,29 +201,33 @@ async def get_summary(
 
     branch_data = [_build_branch(bc) for bc in branch_codes]
 
-    # ── Totals ──────────────────────────────────────────────────────────────────
+    # ── Totals — from raw queries (includes MAIN branch HQ adjustments) ─────────
     def _total_rev_by_cat() -> dict[str, float]:
         r: dict[str, float] = {}
-        for b in branch_data:
-            for cat, amt in b["revenue_by_cat"].items():
-                r[cat] = r.get(cat, 0) + amt
+        for row in rev_rows:
+            cat = row.cat1 or "Прочее"
+            r[cat] = r.get(cat, 0) + float(row.amount or 0)
         return r
 
-    total_rev = sum(b["revenue_total"] for b in branch_data)
-    total_qty = sum(b["revenue_qty"] for b in branch_data)
-    total_cogs = sum(b["cogs"] for b in branch_data)
-    total_cogs_regular = sum(b["cogs_regular"] for b in branch_data)
-    total_bonus = sum(b["bonus_losses"] for b in branch_data)
-    total_gross = sum(b["gross_profit"] for b in branch_data)
-    total_opex_sum = sum(b["total_opex"] for b in branch_data)
-    total_ebitda = sum(b["ebitda"] for b in branch_data)
+    total_rev = sum(float(r.amount or 0) for r in rev_rows)
+    total_qty = sum(float(r.qty or 0) for r in rev_rows)
+    total_cogs_regular = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in cogs_rows)
+    total_bonus = sum(float(r.qty or 0) * cost_map.get(r.code or "", 0) for r in bonus_rows_res)
+    total_cogs = total_cogs_regular + total_bonus
+    total_gross = total_rev - total_cogs
     total_rev_plan = sum(b["revenue_plan"] or 0 for b in branch_data) or None
 
     total_exp: dict[str, dict] = {}
+    total_opex_sum = 0.0
     for cat in all_exp_cats:
         act = sum(b["expenses"].get(cat, {}).get("actual", 0) for b in branch_data)
+        if cat == "ФОТ" and act == 0 and total_rev > 0:
+            act = total_rev * fot_pct / 100
         plans = [b["expenses"].get(cat, {}).get("plan") for b in branch_data if b["expenses"].get(cat, {}).get("plan") is not None]
         total_exp[cat] = {"actual": act, "plan": sum(plans) if plans else None}
+        total_opex_sum += act
+
+    total_ebitda = total_gross - total_opex_sum
 
     totals = {
         "branch_code": "TOTAL",
