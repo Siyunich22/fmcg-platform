@@ -648,7 +648,7 @@ export default function PnlPage() {
                           totalCol={totalCol}
                           branchCols={branchCols}
                           showPlan={showPlan}
-                          deletable={!["ФОТ", "Аренда", "Маркетинг", "Логистика", "Адм. расходы", "Прочие расходы"].includes(cat)}
+                          deletable={!["ФОТ", "Аренда", "Маркетинг", "Логистика", "Адм. расходы", "Кредит (проценты)", "Кредит (осн. долг)", "Прочие расходы"].includes(cat)}
                           periodDate={periodDate!}
                           onSaveActual={(bc, v) => saveExpense(bc, cat, "actual", v)}
                           onSavePlan={(bc, v) => saveExpense(bc, cat, "plan", v)}

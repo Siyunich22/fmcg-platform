@@ -842,6 +842,53 @@ export const useDeleteHqFotItem = () => {
   });
 };
 
+// ── Monthly budget plan ──────────────────────────────────────────────────────
+
+export interface BudgetEntry { plan: number | null; actual: number; }
+
+export interface BudgetData {
+  period_date: string | null;
+  categories: string[];
+  branches: Record<string, string>;
+  budget: Record<string, Record<string, BudgetEntry>>;
+  revenue_targets: Record<string, { plan: number | null }>;
+}
+
+export const usePnlBudget = (period_date?: string) =>
+  useQuery<BudgetData>({
+    queryKey: ["pnl-budget", period_date],
+    queryFn: () => api.get("/api/pnl/settings/budget", { params: { period_date } }).then((r) => r.data),
+    enabled: true,
+  });
+
+export const useSaveBudgetPlan = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, {
+    period_date: string; branch_code: string; category: string; amount_plan: number | null;
+  }>({
+    mutationFn: (body) => api.post("/api/pnl/settings/budget/plan", body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pnl-budget"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
+export const useCopyBudgetPeriod = () => {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean; copied_expenses: number; copied_targets: number },
+    Error,
+    { source_period: string; target_period: string }
+  >({
+    mutationFn: (body) => api.post("/api/pnl/settings/budget/copy", body).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pnl-budget"] });
+      qc.invalidateQueries({ queryKey: ["pnl-summary"] });
+    },
+  });
+};
+
 export const useUpsertFotSetting = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, number>({

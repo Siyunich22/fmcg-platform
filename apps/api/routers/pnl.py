@@ -21,8 +21,11 @@ BRANCH_NAMES = {
 
 EXPENSE_CATEGORIES = [
     ("ФОТ", 10), ("Аренда", 20), ("Маркетинг", 30),
-    ("Логистика", 40), ("Адм. расходы", 50), ("Прочие расходы", 90),
+    ("Логистика", 40), ("Адм. расходы", 50),
+    ("Кредит (проценты)", 60), ("Кредит (осн. долг)", 70),
+    ("Прочие расходы", 90),
 ]
+_SORT_MAP = {c: s for c, s in EXPENSE_CATEGORIES}
 
 
 async def _latest_date(db: AsyncSession) -> Optional[date_type]:
@@ -600,3 +603,116 @@ async def delete_hq_fot(item_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(HqFotItem).where(HqFotItem.id == item_id))
     await db.commit()
     return {"ok": True}
+
+
+# ── Monthly budget plan ───────────────────────────────────────────────────────
+
+@router.get("/settings/budget")
+async def get_budget(
+    period_date: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return plan + actual amounts for all branches/categories for a given period."""
+    pd_str = period_date
+    if not pd_str:
+        latest = await _latest_date(db)
+        pd_str = str(latest) if latest else None
+    if not pd_str:
+        return {"period_date": None, "categories": [], "branches": {}, "budget": {}, "revenue_targets": {}}
+
+    pd = date_type.fromisoformat(pd_str)
+
+    exp_r = await db.execute(select(PnlExpense).where(PnlExpense.period_date == pd))
+    budget: dict = {}
+    for e in exp_r.scalars().all():
+        bc = e.branch_code
+        if bc not in budget:
+            budget[bc] = {}
+        budget[bc][e.category] = {
+            "plan": float(e.amount_plan) if e.amount_plan is not None else None,
+            "actual": float(e.amount_actual or 0),
+        }
+
+    tgt_r = await db.execute(select(PnlTarget).where(PnlTarget.period_date == pd))
+    rev_targets = {
+        t.branch_code: {"plan": float(t.revenue_plan) if t.revenue_plan else None}
+        for t in tgt_r.scalars().all()
+    }
+
+    return {
+        "period_date": pd_str,
+        "categories": [c for c, _ in EXPENSE_CATEGORIES],
+        "branches": BRANCH_NAMES,
+        "budget": budget,
+        "revenue_targets": rev_targets,
+    }
+
+
+@router.post("/settings/budget/plan")
+async def save_budget_plan(
+    period_date: str = Body(...),
+    branch_code: str = Body(...),
+    category: str = Body(...),
+    amount_plan: Optional[float] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save plan amount only — never overwrites actual sales data."""
+    pd = date_type.fromisoformat(period_date)
+    sort_ord = _SORT_MAP.get(category, 100)
+    stmt = pg_insert(PnlExpense).values(
+        period_date=pd, branch_code=branch_code, category=category,
+        amount_actual=0, amount_plan=amount_plan, sort_order=sort_ord,
+    ).on_conflict_do_update(
+        constraint="uq_pnl_expense",
+        set_={"amount_plan": amount_plan},
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/settings/budget/copy")
+async def copy_budget(
+    source_period: str = Body(...),
+    target_period: str = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Copy all plan values (expenses + targets) from source_period to target_period."""
+    src = date_type.fromisoformat(source_period)
+    tgt = date_type.fromisoformat(target_period)
+
+    src_expenses = (await db.execute(
+        select(PnlExpense).where(PnlExpense.period_date == src)
+    )).scalars().all()
+
+    src_targets = (await db.execute(
+        select(PnlTarget).where(PnlTarget.period_date == src)
+    )).scalars().all()
+
+    copied = 0
+    for e in src_expenses:
+        if e.amount_plan is None:
+            continue
+        stmt = pg_insert(PnlExpense).values(
+            period_date=tgt, branch_code=e.branch_code, category=e.category,
+            amount_actual=0, amount_plan=e.amount_plan,
+            notes=e.notes, sort_order=_SORT_MAP.get(e.category, e.sort_order or 100),
+        ).on_conflict_do_update(
+            constraint="uq_pnl_expense",
+            set_={"amount_plan": e.amount_plan},
+        )
+        await db.execute(stmt)
+        copied += 1
+
+    for t in src_targets:
+        stmt = pg_insert(PnlTarget).values(
+            period_date=tgt, branch_code=t.branch_code,
+            revenue_plan=t.revenue_plan, basket_plan=t.basket_plan, sku_plan=t.sku_plan,
+        ).on_conflict_do_update(
+            constraint="uq_pnl_target",
+            set_={"revenue_plan": t.revenue_plan, "basket_plan": t.basket_plan},
+        )
+        await db.execute(stmt)
+
+    await db.commit()
+    return {"ok": True, "copied_expenses": copied, "copied_targets": len(src_targets)}
